@@ -82,7 +82,10 @@ services:
     depends_on:
       - primodel
     environment:
-      PRIMODEL_DOMAIN: "${PRIMODEL_DOMAIN:?set PRIMODEL_DOMAIN (public DNS name) to enable the tls profile}"
+      # Optional here (compose interpolates every service regardless of profile, so a required-var guard
+      # would break the default `docker compose up`). Set PRIMODEL_DOMAIN in .env before using the tls
+      # profile — Caddy needs a public DNS name to obtain a certificate.
+      PRIMODEL_DOMAIN: "${PRIMODEL_DOMAIN:-}"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddydata:/data      # persisted certificates — keep this to avoid re-issuing on restart
