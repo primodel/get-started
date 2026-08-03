@@ -1,0 +1,6 @@
+# Shell scripts must stay LF — they're served via `curl | bash`.
+*.sh text eol=lf
+install.sh text eol=lf
+# PowerShell is fine either way; normalize to LF for consistency.
+*.ps1 text eol=lf
+*.yml text eol=lf
