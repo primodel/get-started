@@ -56,9 +56,9 @@ resource "aws_db_instance" "this" {
   publicly_accessible    = false
   multi_az               = var.db_multi_az
 
-  backup_retention_period = var.db_backup_retention_days
-  deletion_protection     = !var.db_skip_final_snapshot
-  skip_final_snapshot     = var.db_skip_final_snapshot
+  backup_retention_period   = var.db_backup_retention_days
+  deletion_protection       = !var.db_skip_final_snapshot
+  skip_final_snapshot       = var.db_skip_final_snapshot
   final_snapshot_identifier = var.db_skip_final_snapshot ? null : "${var.name}-pg-final"
 
   tags = local.tags
@@ -128,8 +128,8 @@ resource "aws_iam_role" "irsa" {
 
 data "aws_iam_policy_document" "s3" {
   statement {
-    effect  = "Allow"
-    actions = ["s3:ListBucket", "s3:GetBucketLocation"]
+    effect    = "Allow"
+    actions   = ["s3:ListBucket", "s3:GetBucketLocation"]
     resources = [aws_s3_bucket.this.arn]
   }
   statement {

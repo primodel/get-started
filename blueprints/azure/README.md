@@ -17,6 +17,8 @@ run **MinIO** in the cluster and set `config.storage: s3` with its endpoint.
 
 ## Usage
 
+> **Uses OpenTofu** (`tofu`). Terraform is a drop-in — swap `terraform` for `tofu` if you prefer; these modules validate on both.
+
 ```hcl
 module "primodel" {
   source = "github.com/primodel/get-started//blueprints/azure"
@@ -35,14 +37,14 @@ output "primodel_helm_values" { value = module.primodel.helm_values }
 ```
 
 ```bash
-terraform init && terraform plan && terraform apply
+tofu init && tofu plan && tofu apply
 ```
 
 ## Deploy the workload
 
 ```bash
-terraform output -raw database_url    # → secrets.databaseUrl (already includes ?sslmode=require)
-terraform output helm_values          # → config.storage + persistence
+tofu output -raw database_url    # → secrets.databaseUrl (already includes ?sslmode=require)
+tofu output helm_values          # → config.storage + persistence
 ```
 
 Then follow the [Azure blueprint](https://primodel.io/docs/blueprints/azure/) to `helm install`. Set

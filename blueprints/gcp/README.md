@@ -17,6 +17,8 @@ NATS runs inside the cluster (bundled by the chart), so it isn't provisioned her
 
 ## Usage
 
+> **Uses OpenTofu** (`tofu`). Terraform is a drop-in — swap `terraform` for `tofu` if you prefer; these modules validate on both.
+
 ```hcl
 module "primodel" {
   source = "github.com/primodel/get-started//blueprints/gcp"
@@ -37,16 +39,16 @@ output "primodel_helm_values" { value = module.primodel.helm_values }
 ```
 
 ```bash
-terraform init && terraform plan && terraform apply
+tofu init && tofu plan && tofu apply
 ```
 
 ## Deploy the workload
 
 ```bash
-terraform output -raw database_url    # → secrets.databaseUrl
-terraform output -raw s3_access_key   # → secrets.s3.accessKey
-terraform output -raw s3_secret_key   # → secrets.s3.secretKey
-terraform output helm_values          # → config.storage + config.s3.*
+tofu output -raw database_url    # → secrets.databaseUrl
+tofu output -raw s3_access_key   # → secrets.s3.accessKey
+tofu output -raw s3_secret_key   # → secrets.s3.secretKey
+tofu output helm_values          # → config.storage + config.s3.*
 ```
 
 Reach Cloud SQL over its **private IP** (shown in `database_url`) from GKE — nodes must be on the peered

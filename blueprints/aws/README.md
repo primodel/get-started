@@ -20,6 +20,8 @@ NATS runs inside the cluster (bundled by the Helm chart), so it isn't provisione
 
 ## Usage
 
+> **Uses OpenTofu** (`tofu`). Terraform is a drop-in — swap `terraform` for `tofu` if you prefer; these modules validate on both.
+
 ```hcl
 module "primodel" {
   source = "github.com/primodel/get-started//blueprints/aws"
@@ -43,9 +45,9 @@ output "primodel_helm_values" { value = module.primodel.helm_values }
 ```
 
 ```bash
-terraform init
-terraform plan
-terraform apply
+tofu init
+tofu plan
+tofu apply
 ```
 
 ## Deploy the workload
@@ -54,8 +56,8 @@ Feed the outputs into the Helm chart. Put the sensitive `database_url` in your v
 `existingSecret`), and use the `helm_values` snippet for the S3 + IRSA wiring:
 
 ```bash
-terraform output -raw database_url    # → secrets.databaseUrl
-terraform output helm_values          # → config.s3.* + serviceAccount annotation
+tofu output -raw database_url    # → secrets.databaseUrl
+tofu output helm_values          # → config.s3.* + serviceAccount annotation
 ```
 
 Then follow the [AWS blueprint](https://primodel.io/docs/blueprints/aws/) to `helm install`. Remember to

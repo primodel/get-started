@@ -3,3 +3,11 @@
 /primodel/
 .env
 **/.env
+
+# OpenTofu / Terraform — local state, providers, and vars
+**/.terraform/
+**/.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+*.tfvars
+crash.log
