@@ -43,17 +43,17 @@ services:
         condition: service_started
     environment:
       # ── Required backing services ──
-      ConnectionStrings__DefaultConnection: "Host=postgres;Port=5432;Database=${POSTGRES_DB:-primodel};Username=${POSTGRES_USER:-postgres};Password=${POSTGRES_PASSWORD:-postgres}"
-      Nats__Url: "nats://nats:4222"
+      PRIMODEL_DATABASE_URL: "postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-primodel}"
+      PRIMODEL_NATS_URL: "nats://nats:4222"
       # ── Object store: local filesystem (default). Persisted on the objectstore volume. ──
-      ObjectStore__UseFileSystem: "true"
-      ObjectStore__FileSystemRoot: "/data/object-store"
+      PRIMODEL_STORAGE: "filesystem"
+      PRIMODEL_STORAGE_PATH: "/data/object-store"
       # ── Secrets ──
       # Field-level encryption key — REQUIRED. Generate a strong value (see .env.example). Changing it
       # later makes existing encrypted field values unreadable.
-      Encryption__Key: "${PRIMODEL_ENCRYPTION_KEY:?set PRIMODEL_ENCRYPTION_KEY in .env — see .env.example}"
+      PRIMODEL_ENCRYPTION_KEY: "${PRIMODEL_ENCRYPTION_KEY:?set PRIMODEL_ENCRYPTION_KEY in .env — see .env.example}"
       # First-run only: seeds the initial "admin" user with this password. Ignored once a user exists.
-      Auth__BootstrapPassword: "${PRIMODEL_BOOTSTRAP_PASSWORD:-}"
+      PRIMODEL_BOOTSTRAP_PASSWORD: "${PRIMODEL_BOOTSTRAP_PASSWORD:-}"
     volumes:
       - objectstore:/data/object-store
     ports:
