@@ -1,0 +1,4 @@
+# Local runs of install.sh / install.ps1 drop a working dir + secrets here
+primodel/
+.env
+**/.env
