@@ -1,0 +1,9 @@
+# Caddy automatically obtains and renews a Let's Encrypt certificate for PRIMODEL_DOMAIN and
+# reverse-proxies to the Primodel container on :8080. Caddy sets X-Forwarded-Proto/-Host, which
+# Primodel honours when PRIMODEL_TLS_OFFLOAD=true (Secure cookies, correct HTTPS URLs).
+#
+# Prerequisites: PRIMODEL_DOMAIN resolves to this host, and ports 80 + 443 are reachable from the
+# internet (Let's Encrypt validates over HTTP/TLS). Add `email you@example.com` below for expiry notices.
+{$PRIMODEL_DOMAIN} {
+	reverse_proxy primodel:8080
+}

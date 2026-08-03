@@ -6,8 +6,11 @@
 # volume, so no S3/MinIO is needed to get started — see README.md to switch to S3.
 #
 #   cp .env.example .env      # then edit secrets
-#   docker compose up -d
-#   open http://localhost:8080
+#   docker compose up -d      # → http://localhost:8080
+#
+# For automatic HTTPS (Let's Encrypt via Caddy), point a public DNS name at this host, set
+# PRIMODEL_DOMAIN + PRIMODEL_TLS_OFFLOAD=true in .env, then:
+#   docker compose --profile tls up -d      # → https://your-domain
 name: primodel
 
 services:
@@ -54,6 +57,10 @@ services:
       PRIMODEL_ENCRYPTION_KEY: "${PRIMODEL_ENCRYPTION_KEY:?set PRIMODEL_ENCRYPTION_KEY in .env — see .env.example}"
       # First-run only: seeds the initial "admin" user with this password. Ignored once a user exists.
       PRIMODEL_BOOTSTRAP_PASSWORD: "${PRIMODEL_BOOTSTRAP_PASSWORD:-}"
+      # ── Serving ──
+      # Set true when a TLS terminator sits in front (the `tls` profile below, or your own ingress/LB) so
+      # the app honours X-Forwarded-* and marks the auth cookie Secure.
+      PRIMODEL_TLS_OFFLOAD: "${PRIMODEL_TLS_OFFLOAD:-false}"
     volumes:
       - objectstore:/data/object-store
     ports:
@@ -66,7 +73,28 @@ services:
       start_period: 20s
     restart: unless-stopped
 
+  # Opt-in TLS. `docker compose --profile tls up -d` puts Caddy in front with automatic HTTPS
+  # (Let's Encrypt). Requires a public DNS name pointing at this host in PRIMODEL_DOMAIN and
+  # PRIMODEL_TLS_OFFLOAD=true in .env. Caddy terminates TLS and reverse-proxies to primodel:8080.
+  caddy:
+    image: caddy:2
+    profiles: ["tls"]
+    depends_on:
+      - primodel
+    environment:
+      PRIMODEL_DOMAIN: "${PRIMODEL_DOMAIN:?set PRIMODEL_DOMAIN (public DNS name) to enable the tls profile}"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddydata:/data      # persisted certificates — keep this to avoid re-issuing on restart
+      - caddyconfig:/config
+    ports:
+      - "80:80"
+      - "443:443"
+    restart: unless-stopped
+
 volumes:
   pgdata:
   natsdata:
   objectstore:
+  caddydata:
+  caddyconfig:
