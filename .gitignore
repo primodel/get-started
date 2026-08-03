@@ -1,4 +1,5 @@
-# Local runs of install.sh / install.ps1 drop a working dir + secrets here
-primodel/
+# Local runs of install.sh / install.ps1 drop a working dir + secrets here.
+# Anchored to the repo root so it does NOT match helm/primodel/ (the chart).
+/primodel/
 .env
 **/.env

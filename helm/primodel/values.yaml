@@ -1,0 +1,169 @@
+# Default values for the primodel chart.
+# This is a YAML-formatted file. Values are declared once here and referenced
+# from the templates. Anything you want to change per-install goes here (or in a
+# -f override file / --set flag).
+
+# -- Number of Primodel application replicas. The app applies DB migrations and
+# seeds the initial admin on startup; multiple replicas share the same DB.
+replicaCount: 1
+
+image:
+  # -- Container image repository.
+  repository: ghcr.io/primodel/primodel
+  # -- Image tag. Leave empty ("") to fall back to the chart's appVersion.
+  tag: ""
+  # -- Image pull policy.
+  pullPolicy: IfNotPresent
+
+# -- Secrets used to pull the image from a private registry (list of names).
+# e.g. [ { name: ghcr-creds } ]
+imagePullSecrets: []
+
+# Non-secret configuration. Rendered into a ConfigMap and injected via envFrom.
+config:
+  # -- TLS is terminated in front of the app (Ingress / load balancer).
+  # Set to "false" only if the app itself terminates TLS. Always emitted.
+  tlsOffload: true
+
+  # -- Object store backend: "filesystem" (mounted volume) or "s3". Always emitted.
+  storage: filesystem
+  # -- Filesystem object-store path (used when storage == filesystem). Mount point
+  # of the object-store PVC.
+  storagePath: /data/object-store
+
+  # S3 object store (used when storage == s3). Credentials live under secrets.s3.
+  s3:
+    # -- S3-compatible endpoint URL (leave empty for AWS default).
+    endpoint: ""
+    # -- S3 bucket name.
+    bucket: ""
+    # -- S3 region.
+    region: ""
+
+  # OIDC single sign-on (optional). Client secret lives under secrets.oidc.
+  oidc:
+    # -- OIDC authority / issuer URL. Leave empty to disable OIDC.
+    authority: ""
+    # -- OIDC client id.
+    clientId: ""
+
+  # -- OpenTelemetry OTLP endpoint (e.g. http://otel-collector:4317). Leave empty
+  # to disable telemetry export.
+  otlpEndpoint: ""
+
+  # -- NATS connection URL. Only used when nats.enabled is false. When the bundled
+  # NATS is enabled, the in-cluster service DNS is used automatically.
+  natsUrl: ""
+
+# Sensitive configuration. Rendered into a Secret and injected via envFrom, unless
+# existingSecret is set (in which case that Secret is referenced instead).
+secrets:
+  # -- Name of a pre-existing Secret to use instead of creating one from the values
+  # below. It must expose the PRIMODEL_* sensitive keys. Leave empty to have the
+  # chart create the Secret.
+  existingSecret: ""
+
+  # -- PostgreSQL connection URL: postgres://user:pass@host:5432/db (REQUIRED).
+  databaseUrl: ""
+  # -- Encryption key for data at rest (REQUIRED — the app refuses to start without
+  # it, and rotating it makes previously encrypted data unreadable). Generate a
+  # strong random value and keep it safe.
+  encryptionKey: ""
+  # -- Password for the bootstrap admin user seeded on first startup. If left empty,
+  # a password is generated and printed to the application logs.
+  bootstrapPassword: ""
+
+  oidc:
+    # -- OIDC client secret (used when config.oidc.authority is set).
+    clientSecret: ""
+
+  s3:
+    # -- S3 access key (used when config.storage == s3).
+    accessKey: ""
+    # -- S3 secret key (used when config.storage == s3).
+    secretKey: ""
+
+# Bundled single-node NATS JetStream (message backbone). External NATS can be used
+# by disabling this and setting config.natsUrl.
+nats:
+  # -- Deploy a single-node NATS JetStream StatefulSet as part of this release.
+  enabled: true
+  # -- NATS container image.
+  image: nats:2.10
+  persistence:
+    # -- Persist JetStream data to a PersistentVolume.
+    enabled: true
+    # -- Size of the NATS data volume.
+    size: 5Gi
+    # -- StorageClass for the NATS data volume ("" uses the cluster default).
+    storageClass: ""
+
+# Persistent volume for the filesystem object store. Only used when
+# config.storage == "filesystem".
+persistence:
+  # -- Create/mount a PVC for the object store.
+  enabled: true
+  # -- Size of the object-store volume.
+  size: 10Gi
+  # -- StorageClass ("" uses the cluster default).
+  storageClass: ""
+  # -- Access mode for the object-store volume.
+  accessMode: ReadWriteOnce
+
+service:
+  # -- Kubernetes Service type.
+  type: ClusterIP
+  # -- Service port (also the app's container port).
+  port: 8080
+
+ingress:
+  # -- Expose the app through an Ingress.
+  enabled: false
+  # -- IngressClass name ("" leaves it unset / cluster default).
+  className: ""
+  # -- Extra annotations for the Ingress (e.g. cert-manager, nginx tuning).
+  annotations: {}
+  # -- Hostname to route to the app.
+  host: primodel.example.com
+  tls:
+    # -- Terminate TLS at the Ingress using the secret below.
+    enabled: false
+    # -- Name of the TLS Secret (cert + key) for the host.
+    secretName: ""
+
+serviceAccount:
+  # -- Create a ServiceAccount for the app.
+  create: true
+  # -- Name of the ServiceAccount ("" derives it from the release name).
+  name: ""
+  # -- Annotations for the ServiceAccount (e.g. EKS IRSA role ARN).
+  annotations: {}
+
+# -- Resource requests/limits for the app container.
+resources: {}
+
+# -- Node selector for the app pods.
+nodeSelector: {}
+
+# -- Tolerations for the app pods.
+tolerations: []
+
+# -- Affinity rules for the app pods.
+affinity: {}
+
+# -- Pod-level security context. fsGroup 1001 makes the mounted object-store volume
+# group-writable for the non-root user. NOTE: OpenShift assigns its own fsGroup and
+# ignores this value.
+podSecurityContext:
+  fsGroup: 1001
+
+# -- Container-level security context. runAsUser is intentionally NOT set so the
+# platform (e.g. OpenShift) can assign a UID; the image defaults to 1001.
+securityContext:
+  runAsNonRoot: true
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  seccompProfile:
+    type: RuntimeDefault

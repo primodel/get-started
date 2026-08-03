@@ -1,0 +1,36 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "primodel.fullname" . }}
+  labels:
+    {{- include "primodel.labels" . | nindent 4 }}
+data:
+  # Always emitted.
+  PRIMODEL_TLS_OFFLOAD: {{ .Values.config.tlsOffload | quote }}
+  PRIMODEL_STORAGE: {{ .Values.config.storage | quote }}
+  {{- with .Values.config.storagePath }}
+  PRIMODEL_STORAGE_PATH: {{ . | quote }}
+  {{- end }}
+  {{- if .Values.nats.enabled }}
+  PRIMODEL_NATS_URL: {{ printf "nats://%s-nats:4222" (include "primodel.fullname" .) | quote }}
+  {{- else if .Values.config.natsUrl }}
+  PRIMODEL_NATS_URL: {{ .Values.config.natsUrl | quote }}
+  {{- end }}
+  {{- with .Values.config.s3.endpoint }}
+  PRIMODEL_S3_ENDPOINT: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.config.s3.bucket }}
+  PRIMODEL_S3_BUCKET: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.config.s3.region }}
+  PRIMODEL_S3_REGION: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.config.oidc.authority }}
+  PRIMODEL_OIDC_AUTHORITY: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.config.oidc.clientId }}
+  PRIMODEL_OIDC_CLIENT_ID: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.config.otlpEndpoint }}
+  PRIMODEL_OTLP_ENDPOINT: {{ . | quote }}
+  {{- end }}

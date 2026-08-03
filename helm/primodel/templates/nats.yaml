@@ -1,0 +1,71 @@
+{{- if .Values.nats.enabled -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "primodel.fullname" . }}-nats
+  labels:
+    {{- include "primodel.labels" . | nindent 4 }}
+    app.kubernetes.io/component: nats
+spec:
+  # Headless service — stable DNS for the single NATS pod.
+  clusterIP: None
+  ports:
+    - name: client
+      port: 4222
+      targetPort: 4222
+      protocol: TCP
+  selector:
+    {{- include "primodel.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: nats
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "primodel.fullname" . }}-nats
+  labels:
+    {{- include "primodel.labels" . | nindent 4 }}
+    app.kubernetes.io/component: nats
+spec:
+  serviceName: {{ include "primodel.fullname" . }}-nats
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "primodel.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: nats
+  template:
+    metadata:
+      labels:
+        {{- include "primodel.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: nats
+    spec:
+      containers:
+        - name: nats
+          image: {{ .Values.nats.image | quote }}
+          args:
+            - "-js"
+            - "-sd"
+            - "/data"
+          ports:
+            - name: client
+              containerPort: 4222
+              protocol: TCP
+          {{- if .Values.nats.persistence.enabled }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          {{- end }}
+  {{- if .Values.nats.persistence.enabled }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: {{ .Values.nats.persistence.size | quote }}
+        {{- if .Values.nats.persistence.storageClass }}
+        storageClassName: {{ .Values.nats.persistence.storageClass | quote }}
+        {{- end }}
+  {{- end }}
+{{- end }}

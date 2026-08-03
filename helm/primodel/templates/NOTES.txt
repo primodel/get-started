@@ -1,0 +1,29 @@
+Primodel has been deployed as release "{{ .Release.Name }}" in namespace "{{ .Release.Namespace }}".
+
+Reach the application:
+{{- if .Values.ingress.enabled }}
+  http{{ if .Values.ingress.tls.enabled }}s{{ end }}://{{ .Values.ingress.host }}/
+{{- else }}
+  The Service is type {{ .Values.service.type }} and is not exposed outside the cluster.
+  Port-forward to reach it locally:
+
+    kubectl --namespace {{ .Release.Namespace }} port-forward svc/{{ include "primodel.fullname" . }} 8080:{{ .Values.service.port }}
+
+  Then open http://localhost:8080/
+{{- end }}
+
+Bootstrap admin:
+{{- if .Values.secrets.existingSecret }}
+  Credentials come from the existing Secret "{{ .Values.secrets.existingSecret }}"
+  (key PRIMODEL_BOOTSTRAP_PASSWORD).
+{{- else if .Values.secrets.bootstrapPassword }}
+  The admin password is the value you set in secrets.bootstrapPassword.
+{{- else }}
+  No bootstrap password was set — a random one was generated on first startup.
+  Retrieve it from the application logs:
+
+    kubectl --namespace {{ .Release.Namespace }} logs deploy/{{ include "primodel.fullname" . }} | grep -i password
+{{- end }}
+
+The app applies database migrations and seeds the admin user on startup; give it a
+few moments to become ready after first install.
