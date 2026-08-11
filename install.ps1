@@ -32,9 +32,11 @@ Set-Location $TargetDir
 Say 'Downloading docker-compose.yml'
 Invoke-WebRequest -UseBasicParsing "$RepoRaw/docker-compose.yml" -OutFile 'docker-compose.yml'
 
+$freshEnv = $false
 if (Test-Path '.env') {
   Say 'Reusing existing .env'
 } else {
+  $freshEnv = $true
   Say 'Generating .env with fresh secrets'
   $enc     = New-Secret 48
   $adminPw = New-Password 16
@@ -48,6 +50,15 @@ POSTGRES_USER=postgres
 POSTGRES_PASSWORD=$pgPw
 POSTGRES_DB=primodel
 "@ | Set-Content -Path '.env'
+}
+
+# Stale-data guard: Postgres keeps the password from its first init. Fresh secrets + a leftover data
+# dir from a previous run => 28P01 at startup. We never touch existing data — just warn.
+if ($freshEnv -and (Test-Path 'data/postgres') -and (Get-ChildItem 'data/postgres' -Force -ErrorAction SilentlyContinue)) {
+  Write-Host "Warning: Existing database data in .\$TargetDir\data\postgres, but fresh secrets were just generated." -ForegroundColor Yellow
+  Write-Host "         Postgres will reject the new password (28P01). Start fresh (DELETES that data):" -ForegroundColor Yellow
+  Write-Host "           Remove-Item -Recurse -Force .\data     # then re-run" -ForegroundColor Yellow
+  Write-Host "         or restore the .env that created it (matching POSTGRES_PASSWORD). Not touching your data." -ForegroundColor Yellow
 }
 
 Say 'Starting Primodel (docker compose up -d)'

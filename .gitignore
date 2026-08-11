@@ -4,6 +4,9 @@
 .env
 **/.env
 
+# Bind-mounted runtime state (Postgres/NATS/object-store/Caddy) created next to the compose file.
+/compose/data/
+
 # OpenTofu / Terraform — local state, providers, and vars
 **/.terraform/
 **/.terraform.lock.hcl

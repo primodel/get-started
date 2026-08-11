@@ -22,7 +22,10 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-primodel}
     volumes:
       # postgres:18+ stores data in a version subdir; mount the parent, not …/data.
-      - pgdata:/var/lib/postgresql
+      # State is bind-mounted under ./data next to this compose file (not a shared named volume), so
+      # each install directory is self-contained: a fresh dir is a fresh DB, parallel installs are
+      # isolated, and deleting the dir removes the data. No cross-folder credential clashes.
+      - ./data/postgres:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-primodel}"]
       interval: 5s
@@ -34,7 +37,7 @@ services:
     image: nats:2.10
     command: ["-js", "-sd", "/data"]   # JetStream, persisted
     volumes:
-      - natsdata:/data
+      - ./data/nats:/data
     restart: unless-stopped
 
   primodel:
@@ -49,7 +52,7 @@ services:
       # ── Required backing services ──
       PRIMODEL_DATABASE_URL: "postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-primodel}"
       PRIMODEL_NATS_URL: "nats://nats:4222"
-      # ── Object store: local filesystem (default). Persisted on the objectstore volume. ──
+      # ── Object store: local filesystem (default). Persisted under ./data/object-store. ──
       PRIMODEL_STORAGE: "filesystem"
       PRIMODEL_STORAGE_PATH: "/data/object-store"
       # ── Secrets ──
@@ -63,7 +66,7 @@ services:
       # the app honours X-Forwarded-* and marks the auth cookie Secure.
       PRIMODEL_TLS_OFFLOAD: "${PRIMODEL_TLS_OFFLOAD:-false}"
     volumes:
-      - objectstore:/data/object-store
+      - ./data/object-store:/data/object-store
     ports:
       - "${PRIMODEL_PORT:-8080}:8080"
     healthcheck:
@@ -89,16 +92,13 @@ services:
       PRIMODEL_DOMAIN: "${PRIMODEL_DOMAIN:-}"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddydata:/data      # persisted certificates — keep this to avoid re-issuing on restart
-      - caddyconfig:/config
+      - ./data/caddy:/data       # persisted certificates — keep this to avoid re-issuing on restart
+      - ./data/caddy-config:/config
     ports:
       - "80:80"
       - "443:443"
     restart: unless-stopped
 
-volumes:
-  pgdata:
-  natsdata:
-  objectstore:
-  caddydata:
-  caddyconfig:
+# No named volumes: all persistent state is bind-mounted under ./data next to this file (see each
+# service). That keeps every install directory self-contained and avoids Docker's global, project-
+# scoped named volumes silently persisting old credentials across re-runs and separate folders.

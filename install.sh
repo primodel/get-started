@@ -28,9 +28,11 @@ cd "$TARGET_DIR"
 say "Downloading docker-compose.yml"
 curl -fsSL "$REPO_RAW/docker-compose.yml" -o docker-compose.yml
 
+FRESH_ENV=0
 if [ -f .env ]; then
   say "Reusing existing .env"
 else
+  FRESH_ENV=1
   say "Generating .env with fresh secrets"
   ENC_KEY="$(rand 48)"
   ADMIN_PW="$(rand 12 | tr -d '/+=' | cut -c1-16)"
@@ -44,6 +46,16 @@ POSTGRES_PASSWORD=$(rand 12 | tr -d '/+=' | cut -c1-16)
 POSTGRES_DB=primodel
 EOF
   chmod 600 .env
+fi
+
+# Stale-data guard: Postgres keeps the password from its FIRST initialization. If a data dir from a
+# previous run is still here but we just generated fresh secrets, startup fails with 28P01. We never
+# touch existing data (it may be a running/production install) — we only warn.
+if [ "$FRESH_ENV" = 1 ] && [ -d data/postgres ] && [ -n "$(ls -A data/postgres 2>/dev/null || true)" ]; then
+  printf '\033[1;33mWarning:\033[0m Existing database data in ./%s/data/postgres, but fresh secrets were just generated.\n' "$TARGET_DIR" >&2
+  printf '         Postgres will reject the new password (28P01). Either start fresh (DELETES that data):\n' >&2
+  printf '           rm -rf ./data     # then re-run\n' >&2
+  printf '         or restore the .env that created it (matching POSTGRES_PASSWORD). Not touching your data.\n' >&2
 fi
 
 say "Starting Primodel (docker compose up -d)"
