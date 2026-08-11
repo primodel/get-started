@@ -39,6 +39,7 @@ services:
 
   primodel:
     image: ${PRIMODEL_IMAGE:-ghcr.io/primodel/primodel:latest}
+    pull_policy: always   # always fetch the referenced tag so a stale local cache can't serve an old build
     depends_on:
       postgres:
         condition: service_healthy
