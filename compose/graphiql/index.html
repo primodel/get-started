@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>GraphiQL — Primodel</title>
+    <base href="/graphiql/" />
+    <link rel="stylesheet" href="graphiql.css" />
+    <style>html,body,#graphiql{height:100%;margin:0;}</style>
+  </head>
+  <body>
+    <div id="graphiql">Loading GraphiQL…</div>
+    <script src="react.production.min.js"></script>
+    <script src="react-dom.production.min.js"></script>
+    <script src="graphiql.umd.js"></script>
+    <script>
+      // Same-origin: Caddy proxies /graphql to primodel, so your signed-in browser session
+      // (cookie) authenticates automatically — no Authorization header needed here. For an
+      // EXTERNAL / programmatic caller, add {"Authorization":"Bearer <api-key>"} in the Headers tab.
+      // subscriptionUrl points at the same /graphql over WebSocket; the server speaks the
+      // graphql-transport-ws protocol, which createFetcher's built-in graphql-ws client uses.
+      var wsScheme = location.protocol === 'https:' ? 'wss' : 'ws';
+      var fetcher = GraphiQL.createFetcher({
+        url: '/graphql',
+        subscriptionUrl: wsScheme + '://' + location.host + '/graphql',
+      });
+
+      // [DEMO ONLY] Default query: cross-domain Person + Assignment with masked salary field.
+      // Log into Studio first (http://localhost:8080) so the auth cookie carries over here.
+      // ada/lovelace (Owner, Restricted clearance) sees salary cleartext;
+      // grace/hopper (Data Reader, Internal clearance) gets salary hard-masked.
+      var defaultQuery = [
+        '# Primodel GraphQL — demo dataset [DEMO ONLY]',
+        '#',
+        '# This query joins HR (Person) with the cross-domain Finance (Assignment)',
+        '# and demonstrates field-level masking: salary is Restricted — log in as',
+        '# ada/lovelace (Owner) to see cleartext, or grace/hopper (Data Reader) to',
+        '# see it hard-masked. Sign into Studio first (http://localhost:8080) so',
+        '# the auth cookie carries over here.',
+        '',
+        'query DemoPersonsWithSalary {',
+        '  persons(first: 10) {',
+        '    items {',
+        '      id',
+        '      fullName',
+        '      email',
+        '      nationalId',
+        '      assignments {',
+        '        items {',
+        '          position',
+        '          salary',
+        '          startDate',
+        '        }',
+        '      }',
+        '    }',
+        '    totalCount',
+        '  }',
+        '}',
+      ].join('\n');
+
+      var root = ReactDOM.createRoot(document.getElementById('graphiql'));
+      root.render(React.createElement(GraphiQL, { fetcher: fetcher, defaultQuery: defaultQuery }));
+    </script>
+  </body>
+</html>

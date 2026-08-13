@@ -1,16 +1,18 @@
 # Primodel — local quickstart.
 #
-# One Primodel container (UI + REST + GraphQL + OpenAPI on a single port) plus its two required
-# backing services: Postgres (canonical + metadata store) and NATS JetStream (ingestion queue,
-# change events, GraphQL subscriptions). The object store defaults to the local filesystem on a
-# volume, so no S3/MinIO is needed to get started — see README.md to switch to S3.
+# One Primodel container (UI + REST + GraphQL + OpenAPI) plus its required backing services:
+# Postgres (canonical + metadata store), NATS JetStream (ingestion queue, change events,
+# GraphQL subscriptions), and Caddy (front door — same-origin routing + optional HTTPS).
+# The object store defaults to the local filesystem, so no S3/MinIO is needed to get started.
 #
 #   cp .env.example .env      # then edit secrets
 #   docker compose up -d      # → http://localhost:8080
 #
 # For automatic HTTPS (Let's Encrypt via Caddy), point a public DNS name at this host, set
-# PRIMODEL_DOMAIN + PRIMODEL_TLS_OFFLOAD=true in .env, then:
-#   docker compose --profile tls up -d      # → https://your-domain
+# PRIMODEL_DOMAIN in .env, and re-run `docker compose up -d`.
+#
+# [DEMO ONLY] PRIMODEL_DEMO_SEED_INSECURE=true maps POST /api/seed-demo-data so the install
+# script can trigger it. INSECURE: seeds well-known demo passwords — NEVER set on a real install.
 name: primodel
 
 services:
@@ -26,6 +28,10 @@ services:
       # each install directory is self-contained: a fresh dir is a fresh DB, parallel installs are
       # isolated, and deleting the dir removes the data. No cross-folder credential clashes.
       - ./data/postgres:/var/lib/postgresql
+      # [DEMO ONLY] Init script creates the primodel_demo database on first start.
+      # The demo seed connects to this separate DB to provision physical tables and write records;
+      # it does NOT create the database itself — Postgres init scripts handle that here.
+      - ./postgres-init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-primodel}"]
       interval: 5s
@@ -40,6 +46,15 @@ services:
       - ./data/nats:/data
     restart: unless-stopped
 
+  # [DEMO ONLY] Static file server: serves demo source files (JSON/XML/CSV) to the seeded integrations.
+  # Primodel__DemoSeed__SourceBaseUrl points here so the demo ingest flows can fetch them over HTTP.
+  # Not exposed to the host — internal only (primodel → http-demo).
+  http-demo:
+    image: nginx:alpine
+    volumes:
+      - ./demo-data:/usr/share/nginx/html:ro
+    restart: unless-stopped
+
   primodel:
     image: ${PRIMODEL_IMAGE:-ghcr.io/primodel/primodel:latest}
     pull_policy: always   # always fetch the referenced tag so a stale local cache can't serve an old build
@@ -47,6 +62,8 @@ services:
       postgres:
         condition: service_healthy
       nats:
+        condition: service_started
+      http-demo:
         condition: service_started
     environment:
       # ── Required backing services ──
@@ -65,10 +82,22 @@ services:
       # Set true when a TLS terminator sits in front (the `tls` profile below, or your own ingress/LB) so
       # the app honours X-Forwarded-* and marks the auth cookie Secure.
       PRIMODEL_TLS_OFFLOAD: "${PRIMODEL_TLS_OFFLOAD:-false}"
+      # ── Demo seed [DEMO ONLY] ─────────────────────────────────────────────────────────────────────
+      # Maps the hidden POST /api/seed-demo-data endpoint so the install script can trigger it.
+      # The endpoint is a no-op guard if data already exists (returns 409). Remove for production.
+      # INSECURE: seeds well-known demo passwords — NEVER set this on a real install.
+      PRIMODEL_DEMO_SEED_INSECURE: "true"
+      # Source base URL: the http-demo nginx service serves demo data files to the integrations.
+      Primodel__DemoSeed__SourceBaseUrl: "http://http-demo"
+      # Demo data store: a separate Postgres DB provisioned by postgres-init/01-create-demo-db.sql.
+      Primodel__DemoSeed__DataStoreHost: "postgres"
+      Primodel__DemoSeed__DataStoreName: "primodel_demo"
+      Primodel__DemoSeed__DataStoreUser: "${POSTGRES_USER:-postgres}"
+      Primodel__DemoSeed__DataStorePassword: "${POSTGRES_PASSWORD:-postgres}"
     volumes:
       - ./data/object-store:/data/object-store
-    ports:
-      - "${PRIMODEL_PORT:-8080}:8080"
+    expose:
+      - "8080"
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:8080/api/app-info >/dev/null || exit 1"]
       interval: 10s
@@ -77,26 +106,28 @@ services:
       start_period: 20s
     restart: unless-stopped
 
-  # Opt-in TLS. `docker compose --profile tls up -d` puts Caddy in front with automatic HTTPS
-  # (Let's Encrypt). Requires a public DNS name pointing at this host in PRIMODEL_DOMAIN and
-  # PRIMODEL_TLS_OFFLOAD=true in .env. Caddy terminates TLS and reverse-proxies to primodel:8080.
+  # Caddy is the single public entry point. Default: plain HTTP on :8080 for local eval.
+  # Set PRIMODEL_DOMAIN in .env for automatic HTTPS (Let's Encrypt). Caddy also serves the
+  # vendored GraphiQL explorer at /graphiql (same-origin — no CORS configuration needed).
   caddy:
     image: caddy:2
-    profiles: ["tls"]
     depends_on:
-      - primodel
+      primodel:
+        condition: service_healthy
     environment:
-      # Optional here (compose interpolates every service regardless of profile, so a required-var guard
-      # would break the default `docker compose up`). Set PRIMODEL_DOMAIN in .env before using the tls
-      # profile — Caddy needs a public DNS name to obtain a certificate.
-      PRIMODEL_DOMAIN: "${PRIMODEL_DOMAIN:-}"
+      # PRIMODEL_SITE_ADDR controls the Caddy site block address:
+      #   :8080              → plain HTTP, local eval (default)
+      #   your.domain.com    → automatic HTTPS via Let's Encrypt (set PRIMODEL_DOMAIN in .env)
+      PRIMODEL_SITE_ADDR: "${PRIMODEL_DOMAIN:-:8080}"
+      PRIMODEL_TLS_OFFLOAD: "${PRIMODEL_TLS_OFFLOAD:-false}"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - ./data/caddy:/data       # persisted certificates — keep this to avoid re-issuing on restart
+      # GraphiQL explorer: fully vendored (React + GraphiQL UMD), served by Caddy file_server.
+      - ./graphiql:/srv/graphiql:ro
+      - ./data/caddy:/data         # persisted certificates — keep to avoid re-issuing on restart
       - ./data/caddy-config:/config
     ports:
-      - "80:80"
-      - "443:443"
+      - "${PRIMODEL_PORT:-8080}:8080"
     restart: unless-stopped
 
 # No named volumes: all persistent state is bind-mounted under ./data next to this file (see each

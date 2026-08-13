@@ -4,3 +4,8 @@ install.sh text eol=lf
 # PowerShell is fine either way; normalize to LF for consistency.
 *.ps1 text eol=lf
 *.yml text eol=lf
+# Demo data fixtures must stay LF — they're served verbatim by nginx and ingested by Primodel.
+# The round-2 byte-stability test (app repo) also depends on LF.
+compose/demo-data/*.csv  text eol=lf
+compose/demo-data/*.json text eol=lf
+compose/demo-data/*.xml  text eol=lf

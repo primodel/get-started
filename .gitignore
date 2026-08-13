@@ -4,6 +4,10 @@
 .env
 **/.env
 
+# Local-only: a compose override (e.g. pinning a locally-built image) + its bind-mounted state.
+# Never committed — the repo always presents the published GA image to everyone else.
+**/docker-compose.override.yml
+
 # Bind-mounted runtime state (Postgres/NATS/object-store/Caddy) created next to the compose file.
 /compose/data/
 
