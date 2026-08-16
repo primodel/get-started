@@ -2,9 +2,31 @@
 # This is a YAML-formatted file. Values are declared once here and referenced
 # from the templates. Anything you want to change per-install goes here (or in a
 # -f override file / --set flag).
+#
+# ── Deployment modes ──────────────────────────────────────────────────────────
+# Primodel supports three process roles via the PRIMODEL_ROLE environment variable:
+#
+#   all (default)   Single Deployment — all subsystems in one pod.
+#                   DB migrations, admin seeding, API, workers, scheduler, streaming
+#                   supervisor run in the same process. Simplest to operate.
+#
+#   api             API-only Deployment — HTTP/GraphQL/MCP endpoints only.
+#                   No background workers; push requests queue durably on NATS.
+#                   MUST be paired with at least one role=worker Deployment.
+#
+#   worker          Worker-only Deployment — ingestion engine, scheduler, and
+#                   streaming supervisor. No HTTP endpoints except /health/*.
+#                   Health port (8080) exposes only /health/live and /health/ready.
+#
+# To enable the split api+worker topology, set:
+#   worker.enabled: true
+#
+# The api Deployment will then set PRIMODEL_ROLE=api; the worker Deployment will
+# set PRIMODEL_ROLE=worker. Each can be scaled and scheduled independently.
+# ──────────────────────────────────────────────────────────────────────────────
 
-# -- Number of Primodel application replicas. The app applies DB migrations and
-# seeds the initial admin on startup; multiple replicas share the same DB.
+# -- Number of Primodel application replicas (role=all, or role=api when worker.enabled=true).
+# DB migrations and admin seeding run on startup; multiple replicas share the same DB.
 replicaCount: 1
 
 image:
@@ -109,6 +131,42 @@ persistence:
   storageClass: ""
   # -- Access mode for the object-store volume.
   accessMode: ReadWriteOnce
+
+# Worker Deployment (optional — for split api+worker topology).
+# When enabled, the main Deployment becomes role=api and a second Deployment
+# is created for role=worker. Both use the same image, ConfigMap, and Secret.
+worker:
+  # -- Deploy a separate role=worker Deployment alongside the role=api Deployment.
+  # Default: false (single role=all Deployment).
+  enabled: false
+
+  # -- Number of worker replicas. Scale up for higher ingestion throughput.
+  # Each replica claims independent NATS JetStream shard leases; no coordination
+  # required — the lease manager handles exclusive ownership.
+  replicaCount: 1
+
+  # -- Resource requests/limits for the worker container (independent of api).
+  resources: {}
+
+  # -- Node selector for worker pods (e.g. to schedule on memory-optimised nodes).
+  nodeSelector: {}
+
+  # -- Tolerations for worker pods.
+  tolerations: []
+
+  # -- Affinity rules for worker pods.
+  affinity: {}
+
+  # HPA for the worker Deployment (optional).
+  autoscaling:
+    # -- Enable HPA for the worker Deployment.
+    enabled: false
+    # -- Minimum worker replicas.
+    minReplicas: 1
+    # -- Maximum worker replicas.
+    maxReplicas: 5
+    # -- Target CPU utilisation percentage (average across pods).
+    targetCPUUtilizationPercentage: 70
 
 service:
   # -- Kubernetes Service type.
