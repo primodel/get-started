@@ -89,8 +89,67 @@ ObjectStore__SecretKey: "..."
 ObjectStore__ForcePathStyle: "true"
 ```
 
+## Process roles
+
+Primodel supports three process roles via `PRIMODEL_ROLE`. The default (`all`) runs
+everything in one container — suitable for local eval and single-node production.
+
+| `PRIMODEL_ROLE` | What runs | HTTP surface |
+| --- | --- | --- |
+| `all` (default) | API + workers + scheduler + streaming supervisor | Full — UI, REST, GraphQL, MCP, health |
+| `api` | HTTP/GraphQL/MCP endpoints only; no background workers | Full API + health |
+| `worker` | Ingestion engine, scheduler, streaming supervisor; no API | `/health/live`, `/health/ready` only |
+
+### Must-nail rules for split topology
+
+When using `api` + `worker` instead of `all`:
+
+1. **Worker pairing is required.** An `api` node queues ingestion and integration jobs
+   durably on NATS. Jobs are processed only when at least one `worker` node is running.
+   Never run `role=api` without a paired `role=worker` (or `role=all`) process.
+
+2. **Worker binds health only.** The worker container listens on port 8080 for
+   `/health/live` and `/health/ready` only. The full REST/GraphQL/MCP surface is not
+   available on worker pods — route user traffic to `api` pods only.
+
+### Splitting with Docker Compose
+
+The default compose keeps a single `primodel` service with `role=all`. To split into
+separate api and worker services, add a `PRIMODEL_ROLE` environment variable to each:
+
+```yaml
+services:
+  primodel-api:
+    image: ${PRIMODEL_IMAGE:-ghcr.io/primodel/primodel:latest}
+    environment:
+      PRIMODEL_ROLE: "api"
+      # ... same backing-service vars as the single-container setup
+    ports:
+      - "8080:8080"
+
+  primodel-worker:
+    image: ${PRIMODEL_IMAGE:-ghcr.io/primodel/primodel:latest}
+    environment:
+      PRIMODEL_ROLE: "worker"
+      # ... same backing-service vars (no ports needed — health-only)
+    # Worker exposes no host port; health probes via docker compose internally.
+```
+
+Both services share the same image, database, and NATS connection. The worker applies
+no migrations (migrations run only in `all` and `api`); ensure the api service starts
+first if running a fresh install.
+
+### Observability note — streaming-state live lag
+
+Each worker process tracks per-partition streaming lag in memory (StreamingMetrics).
+Prometheus scrapes each worker pod independently. The `/api/streaming-state` REST
+endpoint reflects only the node that handles the HTTP request — for a multi-worker
+deployment this is best-effort (you may hit a different node each time). The authoritative
+committed offset is always in the database and is node-agnostic.
+
 ## Production
 
 For real deployments, point `ConnectionStrings__DefaultConnection`, `Nats__Url` and the `ObjectStore__*`
-settings at managed Postgres, NATS and S3 rather than the bundled single-node services. A Helm chart is
-planned — see the repository root.
+settings at managed Postgres, NATS and S3 rather than the bundled single-node services.
+Use the included Helm chart (`helm/primodel`) for Kubernetes deployments — it supports
+both the single-container (`role=all`) and split (`worker.enabled=true`) topologies.

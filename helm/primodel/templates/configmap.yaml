@@ -7,6 +7,9 @@ metadata:
 data:
   # Always emitted.
   PRIMODEL_TLS_OFFLOAD: {{ .Values.config.tlsOffload | quote }}
+  # PRIMODEL_ROLE is NOT emitted here — the api and worker Deployment templates set it
+  # via a pod-level env entry (not envFrom) so each Deployment gets its own role value
+  # while sharing the same ConfigMap for all other non-secret configuration.
   PRIMODEL_STORAGE: {{ .Values.config.storage | quote }}
   {{- with .Values.config.storagePath }}
   PRIMODEL_STORAGE_PATH: {{ . | quote }}

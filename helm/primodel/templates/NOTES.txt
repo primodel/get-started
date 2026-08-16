@@ -27,3 +27,34 @@ Bootstrap admin:
 
 The app applies database migrations and seeds the admin user on startup; give it a
 few moments to become ready after first install.
+{{- if .Values.worker.enabled }}
+
+SPLIT TOPOLOGY (role=api + role=worker):
+  This release uses the split api+worker topology. Two Deployments have been created:
+
+    {{ include "primodel.fullname" . }}          — role=api  (HTTP/GraphQL/MCP endpoints)
+    {{ include "primodel.fullname" . }}-worker   — role=worker (ingestion, scheduler, streaming)
+
+  Two rules you MUST keep in mind:
+
+  1. WORKER PAIRING IS REQUIRED. The api Deployment serves requests but has no background
+     workers. Ingestion and integration jobs queue durably on NATS while workers are absent,
+     so there is no data loss — but jobs only execute when at least one worker pod is Ready.
+     Never run role=api without at least one role=worker (or role=all) pod.
+
+  2. WORKER HEALTH PORT. The worker Deployment binds port 8080 but exposes ONLY the health
+     endpoints (/health/live and /health/ready). The full REST/GraphQL/MCP API surface is
+     NOT reachable on worker pods — route user traffic only to the api Service.
+
+  Observability note — streaming-state live lag:
+     Each worker pod tracks its own per-partition streaming lag in memory (StreamingMetrics).
+     Prometheus scrapes each pod independently; the /api/streaming-state REST endpoint
+     is best-effort (reflects the node that handles the request). For authoritative
+     committed offsets use the DB — they are durable and node-agnostic.
+{{- else }}
+
+Process role: all (single-container mode, default).
+  All subsystems — HTTP/GraphQL/MCP, ingestion engine, scheduler, and streaming
+  supervisor — run in one Deployment. To split into independent api and worker
+  Deployments, upgrade with --set worker.enabled=true.
+{{- end }}

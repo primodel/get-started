@@ -1,18 +1,30 @@
+{{- if .Values.worker.enabled }}
+# Worker Deployment — role=worker: ingestion engine, scheduler, streaming supervisor.
+# No HTTP API surface. Health port (8080) exposes only /health/live and /health/ready.
+# Scale this independently of the api Deployment; each replica claims independent
+# NATS JetStream shard leases — the ShardLeaseManager handles exclusive ownership.
+#
+# IMPORTANT: At least one worker pod must be Running for ingestion and integration
+# jobs to be processed. The api Deployment queues work durably on NATS while workers
+# are absent (no data loss), but processing only resumes when a worker pod is ready.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "primodel.fullname" . }}
+  name: {{ include "primodel.fullname" . }}-worker
   labels:
     {{- include "primodel.labels" . | nindent 4 }}
+    app.kubernetes.io/component: worker
 spec:
-  replicas: {{ .Values.replicaCount }}
+  replicas: {{ .Values.worker.replicaCount }}
   selector:
     matchLabels:
       {{- include "primodel.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: worker
   template:
     metadata:
       labels:
         {{- include "primodel.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: worker
     spec:
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
@@ -24,20 +36,18 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       containers:
-        - name: {{ .Chart.Name }}
+        - name: {{ .Chart.Name }}-worker
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
-            - name: http
+            # Worker binds port 8080 for health probes only (/health/live and /health/ready).
+            # The full REST/GraphQL/MCP API surface is NOT available on this port in role=worker.
+            - name: health
               containerPort: 8080
               protocol: TCP
           env:
-            {{- if .Values.worker.enabled }}
-            # Split topology: this Deployment runs role=api (HTTP/GraphQL/MCP only, no workers).
-            # At least one role=worker Deployment must be running to process ingestion/integration jobs.
             - name: PRIMODEL_ROLE
-              value: "api"
-            {{- end }}
+              value: "worker"
           envFrom:
             - configMapRef:
                 name: {{ include "primodel.fullname" . }}
@@ -45,21 +55,21 @@ spec:
                 name: {{ .Values.secrets.existingSecret | default (include "primodel.fullname" .) }}
           readinessProbe:
             httpGet:
-              path: /api/app-info
-              port: http
+              path: /health/ready
+              port: health
             initialDelaySeconds: 10
             periodSeconds: 10
           livenessProbe:
             httpGet:
-              path: /api/app-info
-              port: http
+              path: /health/live
+              port: health
             initialDelaySeconds: 30
             periodSeconds: 15
           {{- with .Values.securityContext }}
           securityContext:
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          {{- with .Values.resources }}
+          {{- with .Values.worker.resources }}
           resources:
             {{- toYaml . | nindent 12 }}
           {{- end }}
@@ -74,15 +84,16 @@ spec:
           persistentVolumeClaim:
             claimName: {{ include "primodel.fullname" . }}-data
       {{- end }}
-      {{- with .Values.nodeSelector }}
+      {{- with .Values.worker.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.affinity }}
+      {{- with .Values.worker.affinity }}
       affinity:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.tolerations }}
+      {{- with .Values.worker.tolerations }}
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+{{- end }}
