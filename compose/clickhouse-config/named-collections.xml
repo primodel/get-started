@@ -1,0 +1,13 @@
+<!-- ClickHouse named collections for the Primodel lake demo (TASK-543).
+     These pre-configure the S3 credentials so the iceberg() table function can
+     reach MinIO without repeating credentials in every query.
+     Reference: https://clickhouse.com/docs/en/operations/named-collections -->
+<clickhouse>
+    <named_collections>
+        <primodel_lake>
+            <url>http://minio:9000/primodel-lake/</url>
+            <access_key_id>minioadmin</access_key_id>
+            <secret_access_key>minioadmin</secret_access_key>
+        </primodel_lake>
+    </named_collections>
+</clickhouse>
