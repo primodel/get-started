@@ -85,6 +85,59 @@ Sign in at <http://localhost:8080>.
 
 8. **Reset** — To start fresh: `docker compose down && rm -rf data`, then re-run the install script.
 
+## Data lake (opt-in)
+
+> **DEMO ONLY — opt-in.** The default `docker compose up` is completely unchanged. The lake stack (MinIO + Iceberg REST catalog + ClickHouse) is an optional overlay you start explicitly.
+
+Primodel's governed replication engine writes an open data lake alongside the canonical Postgres store: raw source bytes in the bronze layer and Apache Iceberg tables in the silver layer. Once those Iceberg tables exist, ClickHouse can query them back via its native `iceberg()` table function — demonstrating the full lake round-trip without any proprietary format lock-in.
+
+### Start the lake stack
+
+```bash
+cd compose
+docker compose -f docker-compose.yml -f docker-compose.lake.yml up -d
+```
+
+This adds three services to the running stack:
+
+| Service | What |
+| --- | --- |
+| **MinIO** | S3-compatible object store. Hosts both the bronze raw bytes and the Iceberg data/metadata files. Console at <http://localhost:9001> (user: `minioadmin` / `minioadmin`). |
+| **iceberg-rest** | [tabulario/iceberg-rest](https://github.com/tabular-io/iceberg-rest-image) — the Iceberg REST catalog server. Tracks table metadata on MinIO; the Primodel replication engine writes silver Iceberg tables here. |
+| **ClickHouse** | Query-back engine. Reads Iceberg silver tables from MinIO via its native `iceberg()` table function. HTTP interface at <http://localhost:8123>. |
+
+The `PRIMODEL_DEMO_LAKE=true` flag passed to the Primodel container activates the opt-in lake seed on the next `POST /api/seed-demo-data` call (or a fresh install): it registers the MinIO connection + REST catalog config as the sysadmin lake config, flips the `Person` entity's lake-participation flag, and seeds a disabled "Iceberg → Person (lake query-back)" integration ready to be enabled.
+
+### Explore the lake
+
+1. **Browse bronze objects in MinIO** — open <http://localhost:9001>, sign in as `minioadmin / minioadmin`, and navigate to the `primodel-lake` bucket. After the first integration run you'll see raw source files (JSON/CSV/XML) written by the lake tee under `bronze/`.
+
+2. **Inspect the Iceberg REST catalog** — the catalog exposes a JSON API:
+   ```bash
+   # List namespaces
+   curl http://localhost:8181/v1/namespaces
+   # List tables in the primodel namespace
+   curl http://localhost:8181/v1/namespaces/primodel/tables
+   ```
+
+3. **Query Iceberg silver tables via ClickHouse** — once Primodel has run at least one replication pass the `Person` Iceberg table appears in the catalog. Query it from ClickHouse:
+   ```bash
+   curl 'http://localhost:8123/?query=SELECT+*+FROM+iceberg(%27http://iceberg-rest:8181%27,%27primodel%27,%27person%27)+LIMIT+5'
+   ```
+   Or open the ClickHouse HTTP interface directly: <http://localhost:8123/play>
+
+4. **Enable the query-back integration in Primodel** — sign in as `blaise` (Integrator). Navigate to **Integrations** and enable the seeded "Iceberg → Person (lake query-back)" integration. Run it: Primodel will read the Iceberg silver `Person` table via ClickHouse and deliver the rows back into the canonical Postgres `Person` entity. This demonstrates that the lake is a governed, query-able data source — not just a write-only archive.
+
+### Teardown
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.lake.yml down
+# Optionally remove lake data volumes:
+rm -rf compose/data/minio compose/data/clickhouse
+```
+
+Removing the lake data drops all Iceberg metadata and bronze objects. The canonical Postgres data (under `compose/data/postgres`) is unaffected.
+
 ## Documentation
 
 Full docs, including production deployment guidance, live at <https://primodel.io/docs/>.
