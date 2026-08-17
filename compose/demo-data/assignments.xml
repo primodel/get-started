@@ -156,7 +156,7 @@
     <organisation_id>0000043a-0000-0000-0000-000000000000</organisation_id>
     <cost_center_id>00000bb8-0000-0000-0000-000000000000</cost_center_id>
     <position>Database Administrator</position>
-    <salary>31500</salary>
+    <salary>TBD</salary>
     <start_date>2020-01-15</start_date>
     <end_date>2023-12-31</end_date>
   </assignment>
@@ -166,7 +166,7 @@
     <organisation_id>0000043c-0000-0000-0000-000000000000</organisation_id>
     <cost_center_id>00000c11-0000-0000-0000-000000000000</cost_center_id>
     <position>Site Reliability Engineer</position>
-    <salary>31600</salary>
+    <salary>N/A</salary>
     <start_date>2020-01-15</start_date>
     <end_date>2023-12-31</end_date>
   </assignment>
@@ -176,7 +176,7 @@
     <organisation_id>00000444-0000-0000-0000-000000000000</organisation_id>
     <cost_center_id>00000c0c-0000-0000-0000-000000000000</cost_center_id>
     <position>DevOps Engineer</position>
-    <salary>31700</salary>
+    <salary>PENDING</salary>
     <start_date>2020-01-15</start_date>
     <end_date>2023-12-31</end_date>
   </assignment>
