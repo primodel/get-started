@@ -34,7 +34,9 @@ services:
     volumes:
       - ./data/minio:/data
     ports:
-      - "9001:9001"   # MinIO console → http://localhost:9001  (user: minioadmin / minioadmin)
+      # Console host port is parameterized so a host already running another MinIO on 9001 can remap it
+      # (set MINIO_CONSOLE_PORT in .env). Default keeps the documented http://localhost:9001.
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"   # MinIO console (user: minioadmin / minioadmin)
     expose:
       - "9000"        # S3 API — internal only (Iceberg REST + ClickHouse + Primodel)
     healthcheck:
@@ -85,7 +87,9 @@ services:
     expose:
       - "8181"        # REST catalog API — internal only
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8181/v1/config >/dev/null || exit 1"]
+      # The tabulario/iceberg-rest image ships neither curl nor wget, so probe the listening port with a
+      # bash /dev/tcp handshake (bash IS present). The REST server only binds 8181 once it's ready to serve.
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/localhost/8181' || exit 1"]
       interval: 5s
       timeout: 3s
       retries: 20
@@ -101,13 +105,17 @@ services:
   # HTTP port (8123) is published to the host so you can run queries manually with:
   #   curl 'http://localhost:8123/?query=SELECT%20*%20FROM%20iceberg(...)'
   clickhouse:
-    image: clickhouse/clickhouse-server:25
+    image: clickhouse/clickhouse-server:25.8
     depends_on:
       iceberg-rest:
         condition: service_healthy
     environment:
       # Allow ClickHouse to resolve MinIO and the Iceberg REST catalog by service name.
       CLICKHOUSE_ALLOW_PLAINTEXT_ERROR_LOG: "1"
+      # Keep the built-in passwordless `default` user reachable OVER THE NETWORK. Recent CH images'
+      # entrypoint otherwise "disables network access for user default" when no USER/PASSWORD is set,
+      # which would refuse Primodel's query-back connection from the app container.
+      CLICKHOUSE_SKIP_USER_SETUP: "1"
     volumes:
       - ./data/clickhouse:/var/lib/clickhouse
       - ./clickhouse-config/named-collections.xml:/etc/clickhouse-server/config.d/named-collections.xml:ro
@@ -116,7 +124,8 @@ services:
     expose:
       - "9000"        # Native TCP (internal; avoid clash with MinIO on the same name — use port 9000 on host)
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8123/ping >/dev/null || exit 1"]
+      # The CH server image ships no curl/wget; use the bundled clickhouse-client for the readiness probe.
+      test: ["CMD-SHELL", "clickhouse-client --query 'SELECT 1' >/dev/null || exit 1"]
       interval: 5s
       timeout: 3s
       retries: 20
