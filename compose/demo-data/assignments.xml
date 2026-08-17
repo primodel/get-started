@@ -1000,4 +1000,64 @@
     <start_date>2020-01-15</start_date>
     <end_date>2023-12-31</end_date>
   </assignment>
+  <assignment>
+    <id>00001004-0000-0000-0000-000000000000</id>
+    <person_id>000007de-0000-0000-0000-000000000000</person_id>
+    <organisation_id>000003ea-0000-0000-0000-000000000000</organisation_id>
+    <cost_center_id>00000bcf-0000-0000-0000-000000000000</cost_center_id>
+    <position>Interim Consultant</position>
+    <salary>-5000</salary>
+    <start_date>2024-01-01</start_date>
+    <end_date/>
+  </assignment>
+  <assignment>
+    <id>00001005-0000-0000-0000-000000000000</id>
+    <person_id>000007df-0000-0000-0000-000000000000</person_id>
+    <organisation_id>00000422-0000-0000-0000-000000000000</organisation_id>
+    <cost_center_id>00000bcd-0000-0000-0000-000000000000</cost_center_id>
+    <position>Visiting Researcher</position>
+    <salary>-50000</salary>
+    <start_date>2024-01-01</start_date>
+    <end_date/>
+  </assignment>
+  <assignment>
+    <id>00001006-0000-0000-0000-000000000000</id>
+    <person_id>000007e0-0000-0000-0000-000000000000</person_id>
+    <organisation_id>000003f1-0000-0000-0000-000000000000</organisation_id>
+    <cost_center_id>00000bc5-0000-0000-0000-000000000000</cost_center_id>
+    <position>Executive Advisor</position>
+    <salary>1500000</salary>
+    <start_date>2024-01-01</start_date>
+    <end_date/>
+  </assignment>
+  <assignment>
+    <id>00001007-0000-0000-0000-000000000000</id>
+    <person_id>000007e1-0000-0000-0000-000000000000</person_id>
+    <organisation_id>00000405-0000-0000-0000-000000000000</organisation_id>
+    <cost_center_id>00000bd3-0000-0000-0000-000000000000</cost_center_id>
+    <position>Pending Onboarding</position>
+    <salary>-1</salary>
+    <start_date>2024-03-01</start_date>
+    <end_date/>
+  </assignment>
+  <assignment>
+    <id>00001008-0000-0000-0000-000000000000</id>
+    <person_id>000007e3-0000-0000-0000-000000000000</person_id>
+    <organisation_id>00000445-0000-0000-0000-000000000000</organisation_id>
+    <cost_center_id>00000bbd-0000-0000-0000-000000000000</cost_center_id>
+    <position>Awaiting Contract</position>
+    <salary>-250000</salary>
+    <start_date>2024-03-01</start_date>
+    <end_date/>
+  </assignment>
+  <assignment>
+    <id>00001009-0000-0000-0000-000000000000</id>
+    <person_id>000007e5-0000-0000-0000-000000000000</person_id>
+    <organisation_id>00000423-0000-0000-0000-000000000000</organisation_id>
+    <cost_center_id>00000beb-0000-0000-0000-000000000000</cost_center_id>
+    <position>Transfer Pending</position>
+    <salary>3000000</salary>
+    <start_date>2024-03-01</start_date>
+    <end_date/>
+  </assignment>
 </assignments>
