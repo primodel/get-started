@@ -1,0 +1,21 @@
+# Operator overlay for the get-started stack — mounted at /mnt/primodel/primodel.toml (see
+# docker-compose.yml). Layered on top of the base image's compiled defaults and the optional
+# /etc/primodel/primodel.toml ConfigMap layer; itself overridden by PRIMODEL_* env vars and the
+# runtime_settings DB table:
+#
+#   base image primodel.toml  <  /etc/primodel/primodel.toml  <  THIS FILE  <  PRIMODEL_* env  <  DB
+#
+# TOML SCOPING GOTCHA: a bare key belongs to the MOST RECENT [Table] header above it in the file,
+# and comments do NOT re-scope. A root-level key placed after a [Table] header is silently absorbed
+# into that table — this exact mistake (a root-level AllowedHosts placed after [Logging.LogLevel])
+# made the app unstartable: it landed as Logging:LogLevel:AllowedHosts, and the logging filter then
+# tried to parse "*" as a LogLevel and threw at WebApplicationBuilder.Build(). Always put every
+# root-level key ABOVE the first [Table] header — this file has none, so the rule is moot here, but
+# keep it in mind before adding one.
+
+[Scheduler]
+# Faster integration polling for local exploration, so newly-scheduled ingests show up quickly in
+# the UI. There is no PRIMODEL_* env var for this setting — it only reaches the app through this
+# overlay (or the ConfigMap layer / DB runtime_settings), which is why it's a good one to demonstrate
+# the mount with rather than something env-mappable.
+PollSeconds = 10

@@ -11,6 +11,7 @@ Runs Primodel and its required backing services on your machine with one command
 | `postgres` | `postgres:18` | Canonical + metadata store (**required**) |
 | `nats` | `nats:2.10` (JetStream) | Ingestion queue, change events, GraphQL subscriptions (**required**) |
 | `http-demo` | `nginx:alpine` | [DEMO ONLY] Serves demo source data files (JSON/XML/CSV) to the seeded integrations |
+| `softhsm-init` | built from `softhsm/` | One-shot: initializes the SoftHSM PKCS#11 token used as the KEK backend, then exits |
 
 The object store defaults to the **local filesystem**, so no S3/MinIO is needed to get started. All
 persistent state is **bind-mounted under `./data`** next to the compose file — no Docker named volumes.
@@ -75,6 +76,57 @@ The compose wires the essentials; common overrides:
 | `PRIMODEL_IMAGE` | `…/primodel:latest` | Pin a version tag for reproducible installs |
 | `PRIMODEL_ENCRYPTION_KEY` | — | **Required.** Field-level encryption key; keep it stable |
 | `PRIMODEL_BOOTSTRAP_PASSWORD` | — | First-run admin password; blank → random, logged |
+
+### KEK / field-level secret store (SoftHSM)
+
+The `primodel` service's KEK (Key-Encryption-Key) backend is a **real PKCS#11/Cryptoki token**,
+provided by the bundled `softhsm-init` sidecar — not `PRIMODEL_KEK=none` and not raw key material in
+an env var:
+
+- `softhsm-init` runs once at startup: it initializes the SoftHSM token (well under a second — it's
+  local state creation, not network I/O) and publishes the PKCS#11 module (`libsofthsm2.so`) + its
+  config onto `./data/softhsm/{tokens,etc,lib}`, which `primodel` also mounts. It then exits, and
+  `primodel` waits on that exit (`service_completed_successfully`) before starting — the app's first
+  boot never races an uninitialized token.
+- `PRIMODEL_KEK` is the **non-secret pointer**: `pkcs11:module=<path>;token=<label>;label=<keylabel>`
+  — no key material, ever. `PRIMODEL_KEK_PKCS11_PIN` authenticates to the SoftHSM token (not the KEK
+  itself); it must match `SOFTHSM_PIN` in `.env`.
+- `PRIMODEL_KEK_PKCS11_CREATE_IF_MISSING=true` lets the app generate the AES-256 KEK object on the
+  token itself, the first time it logs in — the sidecar only creates the *token*, not the key.
+  Production deployments leave this unset/false and provision the KEK out-of-band.
+- Deleting `./data/softhsm` (part of the full-reset `rm -rf ./data`) removes the token and the KEK
+  with it — same lifecycle as the rest of `./data`.
+
+See `compose/softhsm/entrypoint.sh` for the full rationale, and the app's `Primodel.Providers.Kek`
+namespace for the other supported backends (`local:`, `awskms:`, `azurekv:`, `gcpkms:`).
+
+### Config file (primodel.toml)
+
+`appsettings.json` has been replaced by `primodel.toml`, layered:
+
+```
+base image primodel.toml  <  /etc/primodel/primodel.toml  <  /mnt/primodel/primodel.toml  <  PRIMODEL_* env  <  DB runtime_settings
+```
+
+This compose mounts `./primodel.toml` at the volume-overlay layer (`/mnt/primodel/primodel.toml`,
+the default `PRIMODEL_CONFIG_PATH`). Use it for settings with **no** `PRIMODEL_*` env var mapping
+(e.g. `[Scheduler] PollSeconds`) — edit `compose/primodel.toml` and `docker compose up -d` to
+re-mount it (Caddy/Postgres/NATS are unaffected; only `primodel` restarts).
+
+> **TOML scoping gotcha:** a bare key belongs to the most recent `[Table]` header above it — a
+> root-level key placed after a table header is silently absorbed into that table (comments do NOT
+> re-scope). Put every root-level key **above** the first `[Table]` header. See the comment at the
+> top of `compose/primodel.toml`.
+
+### Two-phase startup (production secret stores)
+
+Not used by this local stack (plain `PRIMODEL_DATABASE_URL` covers it), but available for
+production deployments that resolve credentials from a secret store instead of plaintext env vars:
+
+| Variable | Purpose |
+| --- | --- |
+| `PRIMODEL_METADATA_SECRET_REF` | Resolves the metadata DB credential from AWS Secrets Manager / Azure Key Vault / a Kubernetes Secret at boot, replacing `PRIMODEL_DATABASE_URL` |
+| `PRIMODEL_KEK` | The KEK pointer (see above) — `awskms:`/`azurekv:`/`gcpkms:`/`pkcs11:` all resolve against a real key store rather than this local SoftHSM sidecar |
 
 ### Using S3 / MinIO instead of the filesystem store
 

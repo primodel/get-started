@@ -39,6 +39,12 @@ required backing services:
 
 The object store defaults to the local filesystem, so nothing else is needed to try it out.
 
+Field-level secrets are protected by a **real PKCS#11/Cryptoki KEK** — a bundled SoftHSM sidecar
+initializes a token on first boot, no manual steps and no key material in an env var. Config is a
+layered `primodel.toml` (base image < ConfigMap/`/etc` overlay < volume/`/mnt` overlay <
+`PRIMODEL_*` env < DB runtime settings). See [`compose/README.md`](./compose/README.md#kek--field-level-secret-store-softhsm)
+for both.
+
 ## Contents
 
 | Path | What |

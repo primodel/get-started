@@ -73,9 +73,36 @@ config:
   # to disable telemetry export.
   otlpEndpoint: ""
 
+  # -- KEK pointer for the envelope-encryption store (TASK-767): "none" (demo/throwaway — DEK stored
+  # plaintext), "local:<base64-32-byte-key>", "awskms:<arn>", "azurekv:<key-url>", "gcpkms:<name>", or
+  # "pkcs11:module=<path>;slot=<n>|token=<label>;label=<keylabel>" for an HSM/Cryptoki backend. This
+  # string is NON-SECRET by design — it never contains key material, only a pointer to where the key
+  # lives. Leave empty to disable KEK/DEK provisioning entirely (no field-level secret store).
+  # Pair with secrets.kekPin when the pkcs11 backend needs a token PIN.
+  kekPointer: ""
+
   # -- NATS connection URL. Only used when nats.enabled is false. When the bundled
   # NATS is enabled, the in-cluster service DNS is used automatically.
   natsUrl: ""
+
+  # -- Optional primodel.toml content (TASK-767), rendered into a ConfigMap and mounted at
+  # /etc/primodel/primodel.toml — the ConfigMap-overlay layer in the app's config precedence chain:
+  #   base image primodel.toml < /etc/primodel/primodel.toml (THIS) < /mnt/primodel/primodel.toml
+  #   < PRIMODEL_* env vars < DB runtime_settings
+  # Use it for settings with no PRIMODEL_* env var mapping (e.g. [Scheduler] PollSeconds) — those
+  # only reach the app through a TOML layer or the DB. Leave empty ("") to skip mounting an
+  # overlay and rely on the base image defaults + PRIMODEL_* env vars above.
+  #
+  # TOML SCOPING GOTCHA: a bare key belongs to the MOST RECENT [Table] header above it, and
+  # comments do NOT re-scope — put every root-level key ABOVE the first [Table] header, or it
+  # silently gets absorbed into that table (this exact mistake made the app unstartable once:
+  # AllowedHosts landed as Logging:LogLevel:AllowedHosts and the logging filter threw on it).
+  #
+  # Example:
+  #   tomlOverlay: |
+  #     [Scheduler]
+  #     PollSeconds = 10
+  tomlOverlay: ""
 
 # Sensitive configuration. Rendered into a Secret and injected via envFrom, unless
 # existingSecret is set (in which case that Secret is referenced instead).
@@ -85,8 +112,17 @@ secrets:
   # chart create the Secret.
   existingSecret: ""
 
-  # -- PostgreSQL connection URL: postgres://user:pass@host:5432/db (REQUIRED).
+  # -- PostgreSQL connection URL: postgres://user:pass@host:5432/db. REQUIRED unless
+  # metadataSecretRef is set instead (two-phase startup, TASK-767) — when both are set,
+  # metadataSecretRef takes over at boot and databaseUrl is ignored.
   databaseUrl: ""
+  # -- Two-phase startup (TASK-767): resolve the metadata DB credential from a secret store instead
+  # of databaseUrl above, e.g. "aws:primodel/metadata-db", "azurekv:https://v.vault.azure.net/secrets/db",
+  # or a Kubernetes-Secret-backed ref. Leave empty to use databaseUrl directly (default).
+  metadataSecretRef: ""
+  # -- PIN for the pkcs11 KEK backend (config.kekPointer). Ignored by other backends / when
+  # config.kekPointer is empty.
+  kekPin: ""
   # -- Encryption key for data at rest (REQUIRED — the app refuses to start without
   # it, and rotating it makes previously encrypted data unreadable). Generate a
   # strong random value and keep it safe.

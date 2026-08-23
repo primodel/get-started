@@ -73,16 +73,31 @@ spec:
           resources:
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          {{- if and (eq .Values.config.storage "filesystem") .Values.persistence.enabled }}
+          {{- if or (and (eq .Values.config.storage "filesystem") .Values.persistence.enabled) .Values.config.tomlOverlay }}
           volumeMounts:
+            {{- if and (eq .Values.config.storage "filesystem") .Values.persistence.enabled }}
             - name: object-store
               mountPath: {{ .Values.config.storagePath | quote }}
+            {{- end }}
+            {{- if .Values.config.tomlOverlay }}
+            - name: primodel-toml
+              mountPath: /etc/primodel/primodel.toml
+              subPath: primodel.toml
+              readOnly: true
+            {{- end }}
           {{- end }}
-      {{- if and (eq .Values.config.storage "filesystem") .Values.persistence.enabled }}
+      {{- if or (and (eq .Values.config.storage "filesystem") .Values.persistence.enabled) .Values.config.tomlOverlay }}
       volumes:
+        {{- if and (eq .Values.config.storage "filesystem") .Values.persistence.enabled }}
         - name: object-store
           persistentVolumeClaim:
             claimName: {{ include "primodel.fullname" . }}-data
+        {{- end }}
+        {{- if .Values.config.tomlOverlay }}
+        - name: primodel-toml
+          configMap:
+            name: {{ include "primodel.fullname" . }}-toml
+        {{- end }}
       {{- end }}
       {{- with .Values.worker.nodeSelector }}
       nodeSelector:

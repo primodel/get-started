@@ -37,3 +37,8 @@ data:
   {{- with .Values.config.otlpEndpoint }}
   PRIMODEL_OTLP_ENDPOINT: {{ . | quote }}
   {{- end }}
+  {{- with .Values.config.kekPointer }}
+  # KEK pointer (TASK-767): non-secret by design — module path / token label / ARN / key URL, never
+  # key material. See secrets.metadataSecretRef below for the paired two-phase-startup secret ref.
+  PRIMODEL_KEK: {{ . | quote }}
+  {{- end }}

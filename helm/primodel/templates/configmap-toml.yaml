@@ -1,0 +1,14 @@
+{{- if .Values.config.tomlOverlay }}
+# ConfigMap-overlay layer of the app's config precedence chain — mounted at
+# /etc/primodel/primodel.toml by the api and worker Deployments (see deployment.yaml /
+# worker-deployment.yaml). Only rendered when .Values.config.tomlOverlay is set.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "primodel.fullname" . }}-toml
+  labels:
+    {{- include "primodel.labels" . | nindent 4 }}
+data:
+  primodel.toml: |
+    {{- .Values.config.tomlOverlay | nindent 4 }}
+{{- end }}
