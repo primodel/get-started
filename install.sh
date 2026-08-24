@@ -147,8 +147,9 @@ else
   ENC_KEY="$(rand 48)"
   ADMIN_PW="$(rand 12 | tr -d '/+=' | cut -c1-16)"
   cat > .env <<EOF
-PRIMODEL_PORT=8080
-PRIMODEL_IMAGE=ghcr.io/primodel/primodel:latest
+PRIMODEL_PORT=${PRIMODEL_PORT:-8080}
+MINIO_CONSOLE_PORT=${MINIO_CONSOLE_PORT:-9001}
+PRIMODEL_IMAGE=${PRIMODEL_IMAGE:-ghcr.io/primodel/primodel:latest}
 PRIMODEL_ENCRYPTION_KEY=${ENC_KEY}
 PRIMODEL_BOOTSTRAP_PASSWORD=${ADMIN_PW}
 POSTGRES_USER=postgres
@@ -173,11 +174,21 @@ if [ "$MODE" = lake ]; then
 else
   say "Starting Primodel"
 fi
-dc up -d
+if ! dc up -d; then
+  printf '[1;33mHint:[0m if a port is already allocated, another service on this machine holds it.
+' >&2
+  printf '      Override PRIMODEL_PORT (Studio, 8080) or MINIO_CONSOLE_PORT (9001) in ./%s/.env and re-run.
+' "$TARGET_DIR" >&2
+  die "docker compose could not start the stack (see the error above)."
+fi
 
 PORT="$(grep -E '^PRIMODEL_PORT=' .env | cut -d= -f2)"
 ADMIN_PW="$(grep -E '^PRIMODEL_BOOTSTRAP_PASSWORD=' .env | cut -d= -f2)"
 PORT="${PORT:-8080}"
+# Read back rather than reuse this run's default: an EXISTING .env is reused as-is, so ITS ports are the
+# ones actually published. Printing 9001 while MinIO listens on 9101 sends a demo viewer to a dead link.
+MINIO_CONSOLE="$(grep -E '^MINIO_CONSOLE_PORT=' .env | cut -d= -f2)"
+MINIO_CONSOLE="${MINIO_CONSOLE:-9001}"
 
 # ── Wait for Primodel to become healthy ──────────────────────────────────────
 say "Waiting for Primodel to become healthy (this may take up to 2 minutes)…"
@@ -252,7 +263,7 @@ esac
 if [ "$MODE" = lake ]; then
   LAKE_HELP="
   Lake services:
-    MinIO console   http://localhost:9001  (minioadmin / minioadmin)
+    MinIO console   http://localhost:${MINIO_CONSOLE}  (minioadmin / minioadmin)
     Iceberg REST    http://localhost:8181/v1/namespaces/primodel/tables
     ClickHouse      http://localhost:8123/play
 

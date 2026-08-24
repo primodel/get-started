@@ -27,10 +27,39 @@ function New-Secret([int]$bytes) {
 }
 function New-Password([int]$len) { ((New-Secret 32) -replace '[/+=]', '').Substring(0, $len) }
 
-function Fetch($url, $dest) {
+# Running from a checkout (or a copied folder) that already has compose/ next to this script means the
+# files are RIGHT HERE - copy them instead of fetching. That makes the script work with no network at
+# all, which is what a laptop demo needs, and guarantees the demo runs the files you brought rather than
+# whatever is currently on main.
+$LocalSource = Join-Path $PSScriptRoot 'compose'
+$UseLocal    = -not $env:PRIMODEL_REPO_RAW -and (Test-Path (Join-Path $LocalSource 'docker-compose.yml'))
+
+# A file:// source is a local path wearing a URL - Invoke-WebRequest rejects the scheme outright
+# ("The 'file' scheme is not supported"), so resolve it to a directory and copy from it instead. curl
+# in the shell installer accepts file:// natively, and the two must behave the same.
+if ($env:PRIMODEL_REPO_RAW -and $env:PRIMODEL_REPO_RAW.StartsWith('file://')) {
+  $LocalSource = $env:PRIMODEL_REPO_RAW.Substring(7).TrimStart('/')
+  # A Unix-style /c/... path (Git Bash) is not something Windows can open.
+  if ($LocalSource -match '^([a-zA-Z])/(.*)$') { $LocalSource = "$($Matches[1]):/$($Matches[2])" }
+  if (-not (Test-Path (Join-Path $LocalSource 'docker-compose.yml'))) {
+    Die "PRIMODEL_REPO_RAW points at $LocalSource, which has no docker-compose.yml."
+  }
+  $UseLocal = $true
+}
+
+function Fetch($rel, $dest) {
   $dir = Split-Path $dest
   if ($dir) { New-Item -ItemType Directory -Force -Path $dir | Out-Null }
-  Invoke-WebRequest -UseBasicParsing $url -OutFile $dest
+  if ($UseLocal) {
+    $src = Join-Path $LocalSource $rel
+    # Copying a directory that exists but is EMPTY is the failure this guards: docker bind-mounts it
+    # anyway, postgres then skips its init scripts, the demo database is never created, and the seed
+    # dies with 3D000 - after which there are no users and nobody can log in. Fail loudly instead.
+    if (-not (Test-Path $src)) { Die "Missing file in local source: $src" }
+    Copy-Item $src $dest -Force
+  } else {
+    Invoke-WebRequest -UseBasicParsing "$RepoRaw/$rel" -OutFile $dest
+  }
 }
 
 # -- Which stack? -------------------------------------------------------------
@@ -87,37 +116,37 @@ New-Item -ItemType Directory -Force -Path $TargetDir | Out-Null
 Set-Location $TargetDir
 
 Say 'Downloading compose files'
-Fetch "$RepoRaw/docker-compose.yml" 'docker-compose.yml'
-Fetch "$RepoRaw/Caddyfile"          'Caddyfile'
-Fetch "$RepoRaw/primodel.toml"      'primodel.toml'
+Fetch 'docker-compose.yml' 'docker-compose.yml'
+Fetch 'Caddyfile' 'Caddyfile'
+Fetch 'primodel.toml' 'primodel.toml'
 
 # The KEK lives in a SoftHSM token whose image is BUILT from this directory by the compose file -
 # without these two files `docker compose up` fails on a missing build context before anything starts.
-Fetch "$RepoRaw/softhsm/Dockerfile"    'softhsm/Dockerfile'
-Fetch "$RepoRaw/softhsm/entrypoint.sh" 'softhsm/entrypoint.sh'
+Fetch 'softhsm/Dockerfile' 'softhsm/Dockerfile'
+Fetch 'softhsm/entrypoint.sh' 'softhsm/entrypoint.sh'
 
 if ($mode -eq 'lake') {
   Say 'Downloading data-lakehouse overlay (MinIO + Iceberg REST + ClickHouse)'
-  Fetch "$RepoRaw/docker-compose.lake.yml" 'docker-compose.lake.yml'
+  Fetch 'docker-compose.lake.yml' 'docker-compose.lake.yml'
   # ClickHouse reads the MinIO credentials for the iceberg() table function from this named collection,
   # so the query-back cannot work without it.
-  Fetch "$RepoRaw/clickhouse-config/named-collections.xml" 'clickhouse-config/named-collections.xml'
+  Fetch 'clickhouse-config/named-collections.xml' 'clickhouse-config/named-collections.xml'
 }
 
 Say 'Downloading GraphiQL explorer (vendored — offline capable)'
-Fetch "$RepoRaw/graphiql/index.html"                  'graphiql/index.html'
-Fetch "$RepoRaw/graphiql/graphiql.umd.js"             'graphiql/graphiql.umd.js'
-Fetch "$RepoRaw/graphiql/graphiql.css"                'graphiql/graphiql.css'
-Fetch "$RepoRaw/graphiql/react.production.min.js"     'graphiql/react.production.min.js'
-Fetch "$RepoRaw/graphiql/react-dom.production.min.js" 'graphiql/react-dom.production.min.js'
+Fetch 'graphiql/index.html' 'graphiql/index.html'
+Fetch 'graphiql/graphiql.umd.js' 'graphiql/graphiql.umd.js'
+Fetch 'graphiql/graphiql.css' 'graphiql/graphiql.css'
+Fetch 'graphiql/react.production.min.js' 'graphiql/react.production.min.js'
+Fetch 'graphiql/react-dom.production.min.js' 'graphiql/react-dom.production.min.js'
 
 # [DEMO ONLY — INSECURE] Download postgres init scripts and demo source data files.
 # The compose stack sets PRIMODEL_DEMO_SEED_INSECURE=true which seeds well-known demo passwords.
 # NEVER use PRIMODEL_DEMO_SEED_INSECURE on a real install — for evaluation only.
 Say 'Downloading postgres init scripts and demo data files [DEMO ONLY — INSECURE]'
-Fetch "$RepoRaw/postgres-init/01-create-demo-db.sql" 'postgres-init/01-create-demo-db.sql'
+Fetch 'postgres-init/01-create-demo-db.sql' 'postgres-init/01-create-demo-db.sql'
 foreach ($f in @('organisations.xml','persons.json','persons_payroll.csv','persons_r2.json','persons_payroll_r2.csv','assignments.xml','costcenters.csv','invoices.json')) {
-  Fetch "$RepoRaw/demo-data/$f" "demo-data/$f"
+  Fetch "demo-data/$f" "demo-data/$f"
 }
 
 $freshEnv = $false
@@ -126,12 +155,19 @@ if (Test-Path '.env') {
 } else {
   $freshEnv = $true
   Say 'Generating .env with fresh secrets'
+  # Overridable so a locally built or side-loaded image can be demoed before the GA package is public.
+  $img     = if ($env:PRIMODEL_IMAGE) { $env:PRIMODEL_IMAGE } else { 'ghcr.io/primodel/primodel:latest' }
+  # Ports are written into .env so a clash is fixed by editing one file rather than hunting through
+  # compose. Overridable up front for machines that already run something on 8080/9001.
+  $studioPort = if ($env:PRIMODEL_PORT) { $env:PRIMODEL_PORT } else { '8080' }
+  $minioPort  = if ($env:MINIO_CONSOLE_PORT) { $env:MINIO_CONSOLE_PORT } else { '9001' }
   $enc     = New-Secret 48
   $adminPw = New-Password 16
   $pgPw    = New-Password 16
   @"
-PRIMODEL_PORT=8080
-PRIMODEL_IMAGE=ghcr.io/primodel/primodel:latest
+PRIMODEL_PORT=$studioPort
+MINIO_CONSOLE_PORT=$minioPort
+PRIMODEL_IMAGE=$img
 PRIMODEL_ENCRYPTION_KEY=$enc
 PRIMODEL_BOOTSTRAP_PASSWORD=$adminPw
 POSTGRES_USER=postgres
@@ -149,14 +185,45 @@ if ($freshEnv -and (Test-Path 'data/postgres') -and (Get-ChildItem 'data/postgre
   Write-Host "         or restore the .env that created it (matching POSTGRES_PASSWORD). Not touching your data." -ForegroundColor Yellow
 }
 
+# The compose file pins `pull_policy: always` so a stale cache can never serve an old build. That is
+# right for the published image and wrong for one you built or side-loaded yourself: compose would try
+# to pull `primodel:local` from a registry and fail. When the configured image is already present
+# locally, drop in an override that skips the pull - which is what makes an offline demo possible.
+$image = (Select-String -Path '.env' -Pattern '^PRIMODEL_IMAGE=(.*)$').Matches.Groups[1].Value
+if ($image -and (docker image inspect $image 2>$null)) {
+  Say "Using the local image $image (skipping registry pull)"
+  @"
+# Written by install.ps1: $image is present locally, so do not try to pull it.
+services:
+  primodel:
+    image: $image
+    pull_policy: never
+"@ | Set-Content -Path 'docker-compose.local.yml'
+  $ComposeFiles += @('-f', 'docker-compose.local.yml')
+  $ComposeArgs = $ComposeFiles -join ' '
+}
+
 if ($mode -eq 'lake') {
   Say 'Starting Primodel and the lake services - first run pulls ~1 GB, please be patient'
 } else {
   Say 'Starting Primodel'
 }
 docker compose @ComposeFiles up -d
+# Fail here rather than 2 minutes later in the health loop. A port clash or a bad image is reported by
+# compose in plain language; "Primodel did not become healthy" hides it behind a symptom.
+if ($LASTEXITCODE -ne 0) {
+  Write-Host ''
+  Write-Host 'Hint: if a port is already allocated, another service on this machine holds it. Override in' -ForegroundColor Yellow
+  Write-Host "      .\$TargetDir\.env - PRIMODEL_PORT (Studio, 8080) or MINIO_CONSOLE_PORT (9001) - and re-run." -ForegroundColor Yellow
+  Die 'docker compose could not start the stack (see the error above).'
+}
 
 $port    = (Select-String -Path '.env' -Pattern '^PRIMODEL_PORT=(.*)$').Matches.Groups[1].Value
+# Read back rather than reuse the variable: an EXISTING .env is reused as-is, so its ports - not this
+# run's defaults - are the ones actually published. Printing 9001 while MinIO listens on 9101 sends the
+# viewer of a demo to a dead link.
+$minioConsole = (Select-String -Path '.env' -Pattern '^MINIO_CONSOLE_PORT=(.*)$').Matches.Groups[1].Value
+if (-not $minioConsole) { $minioConsole = '9001' }
 $adminPw = (Select-String -Path '.env' -Pattern '^PRIMODEL_BOOTSTRAP_PASSWORD=(.*)$').Matches.Groups[1].Value
 if (-not $port) { $port = '8080' }
 
@@ -259,7 +326,7 @@ Write-Host "  Reset:    cd $TargetDir; docker compose $ComposeArgs down; Remove-
 if ($mode -eq 'lake') {
   Write-Host ''
   Write-Host '  Lake services:'
-  Write-Host '    MinIO console   http://localhost:9001  (minioadmin / minioadmin)'
+  Write-Host "    MinIO console   http://localhost:$minioConsole  (minioadmin / minioadmin)"
   Write-Host '    Iceberg REST    http://localhost:8181/v1/namespaces/primodel/tables'
   Write-Host '    ClickHouse      http://localhost:8123/play'
   Write-Host ''
