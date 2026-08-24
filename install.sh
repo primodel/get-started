@@ -7,7 +7,9 @@
 # Downloads the compose quickstart into ./primodel, generates secrets, and starts it.
 set -euo pipefail
 
-REPO_RAW="https://raw.githubusercontent.com/primodel/get-started/main/compose"
+# Overridable so a fork, an internal mirror, or a local checkout can be installed from — and so the
+# installer itself can be exercised end-to-end without publishing anything.
+REPO_RAW="${PRIMODEL_REPO_RAW:-https://raw.githubusercontent.com/primodel/get-started/main/compose}"
 TARGET_DIR="${PRIMODEL_DIR:-primodel}"
 
 say() { printf '\033[1;36m==>\033[0m %s\n' "$*"; }
@@ -21,6 +23,79 @@ rand() {
   else head -c "$1" /dev/urandom | base64; fi
 }
 
+# ── Which stack? ─────────────────────────────────────────────────────────────
+# quick = Primodel + Postgres + NATS + Caddy.
+# lake  = the above PLUS MinIO + Iceberg REST catalog + ClickHouse, so the demo shows the governed
+#         lakehouse round-trip (canonical store -> Iceberg silver -> queried back through ClickHouse).
+#
+# Resolution order: flag, then PRIMODEL_MODE, then an interactive prompt, then quick. The prompt reads
+# from /dev/tty rather than stdin ON PURPOSE: the documented install is `curl … | bash`, where stdin is
+# the SCRIPT ITSELF — a plain `read` would swallow the rest of the script instead of waiting for a key.
+# Where no terminal exists at all (CI, a Dockerfile) that read is impossible, so we take the quick
+# default rather than hanging forever.
+MODE="${PRIMODEL_MODE:-}"
+for arg in "$@"; do
+  case "$arg" in
+    --lake|--full) MODE=lake ;;
+    --quick)       MODE=quick ;;
+    -h|--help)
+      cat <<'USAGE'
+Primodel quickstart.
+
+  install.sh [--quick|--lake]
+
+  --quick   Primodel + Postgres + NATS (default)
+  --lake    also MinIO + Iceberg REST catalog + ClickHouse (governed lakehouse demo)
+
+Non-interactive: set PRIMODEL_MODE=quick|lake. With no flag, no PRIMODEL_MODE and no
+terminal to prompt on, --quick is used.
+USAGE
+      exit 0 ;;
+    *) die "Unknown option: $arg (try --help)" ;;
+  esac
+done
+
+if [ -z "$MODE" ]; then
+  if [ -r /dev/tty ]; then
+    printf '
+'
+    printf '  Which demo would you like?
+
+'
+    printf '    1) Quick start    Primodel + Postgres + NATS. Fastest, smallest download.
+'
+    printf '    2) Data lakehouse Adds MinIO + Iceberg + ClickHouse, and shows the governed
+'
+    printf '                      round-trip: canonical store -> Iceberg -> queried back via ClickHouse.
+'
+    printf '                      Pulls ~1 GB more and takes a few minutes longer to start.
+
+'
+    printf '  Choice [1]: '
+    read -r REPLY_MODE < /dev/tty || REPLY_MODE=""
+    printf '
+'
+    case "$REPLY_MODE" in
+      2|lake|Lake|LAKE) MODE=lake ;;
+      *)                MODE=quick ;;
+    esac
+  else
+    MODE=quick
+  fi
+fi
+
+if [ "$MODE" = lake ]; then
+  COMPOSE_FILES=(-f docker-compose.yml -f docker-compose.lake.yml)
+  say "Installing the data-lakehouse demo (Primodel + Postgres + NATS + MinIO + Iceberg + ClickHouse)"
+else
+  COMPOSE_FILES=(-f docker-compose.yml)
+  say "Installing the quick-start demo (Primodel + Postgres + NATS)"
+fi
+
+# Every compose call goes through this so the overlay can never be applied to `up` but forgotten on
+# `down` — a mismatch there leaves orphan lake containers running against a stopped stack.
+dc() { docker compose "${COMPOSE_FILES[@]}" "$@"; }
+
 say "Setting up Primodel in ./${TARGET_DIR}"
 mkdir -p "$TARGET_DIR"
 cd "$TARGET_DIR"
@@ -28,6 +103,22 @@ cd "$TARGET_DIR"
 say "Downloading compose files"
 curl -fsSL "$REPO_RAW/docker-compose.yml" -o docker-compose.yml
 curl -fsSL "$REPO_RAW/Caddyfile"          -o Caddyfile
+curl -fsSL "$REPO_RAW/primodel.toml"      -o primodel.toml
+
+# The KEK lives in a SoftHSM token, and its image is BUILT from this directory by the compose file —
+# without these two files `docker compose up` fails on a missing build context before anything starts.
+mkdir -p softhsm
+curl -fsSL "$REPO_RAW/softhsm/Dockerfile"   -o softhsm/Dockerfile
+curl -fsSL "$REPO_RAW/softhsm/entrypoint.sh" -o softhsm/entrypoint.sh
+
+if [ "$MODE" = lake ]; then
+  say "Downloading data-lakehouse overlay (MinIO + Iceberg REST + ClickHouse)"
+  curl -fsSL "$REPO_RAW/docker-compose.lake.yml" -o docker-compose.lake.yml
+  mkdir -p clickhouse-config
+  # ClickHouse reads the MinIO credentials for the iceberg() table function from this named collection,
+  # so the query-back cannot work without it.
+  curl -fsSL "$REPO_RAW/clickhouse-config/named-collections.xml" -o clickhouse-config/named-collections.xml
+fi
 
 say "Downloading GraphiQL explorer (vendored — offline capable)"
 mkdir -p graphiql
@@ -77,8 +168,12 @@ if [ "$FRESH_ENV" = 1 ] && [ -d data/postgres ] && [ -n "$(ls -A data/postgres 2
   printf '         or restore the .env that created it (matching POSTGRES_PASSWORD). Not touching your data.\n' >&2
 fi
 
-say "Starting Primodel (docker compose up -d)"
-docker compose up -d
+if [ "$MODE" = lake ]; then
+  say "Starting Primodel and the lake services — first run pulls ~1 GB, please be patient"
+else
+  say "Starting Primodel"
+fi
+dc up -d
 
 PORT="$(grep -E '^PRIMODEL_PORT=' .env | cut -d= -f2)"
 ADMIN_PW="$(grep -E '^PRIMODEL_BOOTSTRAP_PASSWORD=' .env | cut -d= -f2)"
@@ -101,11 +196,13 @@ if [ "$RETRIES" -eq 0 ]; then
   exit 1
 fi
 
-# ── Seed demo data [DEMO ONLY — INSECURE] ────────────────────────────────────
-# POST /api/seed-demo-data BLOCKS until all ingests complete (~30–120 s).
-# Returns 200 on success, 409 if data already exists (idempotent).
-# INSECURE: seeds well-known demo passwords — never set PRIMODEL_DEMO_SEED_INSECURE on a real install.
-say "Seeding demo data — this may take 1–2 minutes while integrations run… [DEMO ONLY — INSECURE]"
+# -- Seed demo data [DEMO ONLY - INSECURE] ------------------------------------
+# POST /api/seed-demo-data returns 202 and seeds in the BACKGROUND - the HTTP call returning is not the
+# seed finishing. Progress is polled from /api/seed-demo-data/status until it leaves Running, so the
+# installer never claims "ready with the demo dataset" over a half-populated database.
+# Returns 409 if data already exists (idempotent).
+# INSECURE: seeds well-known demo passwords - never set PRIMODEL_DEMO_SEED_INSECURE on a real install.
+say "Seeding demo data - this may take 1-2 minutes while integrations run... [DEMO ONLY - INSECURE]"
 SEED_URL="http://localhost:${PORT}/api/seed-demo-data"
 SEED_STATUS=""
 if command -v curl >/dev/null 2>&1; then
@@ -114,11 +211,57 @@ else
   SEED_STATUS="$(wget -q --server-response -O /dev/null --method=POST --timeout=300 "$SEED_URL" 2>&1 | awk '/HTTP\//{print $2}' | tail -1)"
 fi
 
+# The seed state as a bare word (Idle|Running|Seeded|Failed|SystemNotEmpty). Parsed with sed rather than
+# jq, which is not a dependency we can assume on a machine that has just installed Docker.
+seed_state() {
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsS "${SEED_URL}/status" 2>/dev/null | sed -n 's/.*"state"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p'
+  else
+    wget -qO- "${SEED_URL}/status" 2>/dev/null | sed -n 's/.*"state"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p'
+  fi
+}
+
 case "$SEED_STATUS" in
-  200) say "Demo data seeded successfully." ;;
-  409) say "Demo data already present — skipping seed." ;;
+  200|202)
+    # 300 polls x 2 s = 10 minutes. Generous on purpose: on a cold machine the lake seed also writes
+    # Iceberg metadata to MinIO, and giving up early would report failure on a seed that is fine.
+    SEED_WAIT=300
+    SEED_FINAL=""
+    while [ "$SEED_WAIT" -gt 0 ]; do
+      SEED_FINAL="$(seed_state)"
+      case "$SEED_FINAL" in
+        Seeded|Failed|SystemNotEmpty) break ;;
+      esac
+      SEED_WAIT=$((SEED_WAIT - 1))
+      printf '.'
+      sleep 2
+    done
+    echo
+    case "$SEED_FINAL" in
+      Seeded)         say "Demo data seeded successfully." ;;
+      SystemNotEmpty) say "Demo data already present - skipping seed." ;;
+      Failed)         printf '\033[1;33mWarning:\033[0m Demo seed FAILED. See: docker compose logs primodel\n' >&2 ;;
+      *)              printf '\033[1;33mWarning:\033[0m Demo seed still running after 10 minutes. Check: docker compose logs primodel\n' >&2 ;;
+    esac
+    ;;
+  409) say "Demo data already present - skipping seed." ;;
   *)   printf '\033[1;33mWarning:\033[0m Seed returned HTTP %s. Demo data may be incomplete.\n' "$SEED_STATUS" >&2 ;;
 esac
+
+# Lake-only endpoints, appended to the summary. Empty in quick mode so the heredoc stays identical.
+if [ "$MODE" = lake ]; then
+  LAKE_HELP="
+  Lake services:
+    MinIO console   http://localhost:9001  (minioadmin / minioadmin)
+    Iceberg REST    http://localhost:8181/v1/namespaces/primodel/tables
+    ClickHouse      http://localhost:8123/play
+
+  The seed replicates the golden Person entity into Iceberg silver on MinIO. Query it back:
+    curl 'http://localhost:8123/?query=SELECT+*+FROM+iceberg(primodel_lake,filename=%27silver/hr/person%27)+LIMIT+5'
+"
+else
+  LAKE_HELP=""
+fi
 
 cat <<EOF
 
@@ -149,10 +292,10 @@ $(say "Primodel is ready with the demo dataset! [DEMO ONLY — INSECURE]")
   REST example (as ada — Owner sees unmasked salary):
     curl -u ada:lovelace http://localhost:${PORT}/api/data/Demo/HR/Person/records
 
-  Logs:     (cd ${TARGET_DIR} && docker compose logs -f primodel)
-  Stop:     (cd ${TARGET_DIR} && docker compose down)
-  Reset:    (cd ${TARGET_DIR} && docker compose down && rm -rf data)
-
+  Logs:     (cd ${TARGET_DIR} && docker compose ${COMPOSE_FILES[*]} logs -f primodel)
+  Stop:     (cd ${TARGET_DIR} && docker compose ${COMPOSE_FILES[*]} down)
+  Reset:    (cd ${TARGET_DIR} && docker compose ${COMPOSE_FILES[*]} down && rm -rf data)
+${LAKE_HELP}
 Credentials are stored in ./${TARGET_DIR}/.env.
 
   [DEMO ONLY] See README for the full demo tour: masking, integrations, MDM golden/quarantine,
