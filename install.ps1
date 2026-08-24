@@ -31,8 +31,10 @@ function New-Password([int]$len) { ((New-Secret 32) -replace '[/+=]', '').Substr
 # files are RIGHT HERE - copy them instead of fetching. That makes the script work with no network at
 # all, which is what a laptop demo needs, and guarantees the demo runs the files you brought rather than
 # whatever is currently on main.
-$LocalSource = Join-Path $PSScriptRoot 'compose'
-$UseLocal    = -not $env:PRIMODEL_REPO_RAW -and (Test-Path (Join-Path $LocalSource 'docker-compose.yml'))
+# $PSScriptRoot is EMPTY under `irm ... | iex` — there is no script file — and Join-Path throws on an
+# empty path, which would break the documented one-liner before it printed anything.
+$LocalSource = if ($PSScriptRoot) { Join-Path $PSScriptRoot 'compose' } else { $null }
+$UseLocal    = -not $env:PRIMODEL_REPO_RAW -and $LocalSource -and (Test-Path (Join-Path $LocalSource 'docker-compose.yml'))
 
 # A file:// source is a local path wearing a URL - Invoke-WebRequest rejects the scheme outright
 # ("The 'file' scheme is not supported"), so resolve it to a directory and copy from it instead. curl
