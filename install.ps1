@@ -54,12 +54,11 @@ if ($env:PRIMODEL_REPO_RAW -and $env:PRIMODEL_REPO_RAW.StartsWith('file://')) {
 # over - is a demo that fails in front of an audience. Pick a port that works and say which one.
 function Get-FreePort([int]$preferred, [string]$label) {
   for ($p = $preferred; $p -lt ($preferred + 50); $p++) {
-    $inUse = $false
-    try {
-      # Loopback only: this asks "can a container publish here", which is a HOST binding question.
-      $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, $p)
-      $listener.Start(); $listener.Stop()
-    } catch { $inUse = $true }
+    # Enumerate what is actually listening rather than trying to bind. Windows will happily let you
+    # bind 127.0.0.1:9001 while another process holds 0.0.0.0:9001 - a bind probe therefore reports
+    # "free" for a port docker cannot publish on, which is the exact case this function exists for.
+    $inUse = [System.Net.NetworkInformation.IPGlobalProperties]::GetIPGlobalProperties().
+      GetActiveTcpListeners() | Where-Object { $_.Port -eq $p }
     if (-not $inUse) {
       if ($p -ne $preferred) { Say "$label port $preferred is taken on this machine - using $p instead" }
       return $p
