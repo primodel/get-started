@@ -120,7 +120,9 @@ services:
       - ./data/clickhouse:/var/lib/clickhouse
       - ./clickhouse-config/named-collections.xml:/etc/clickhouse-server/config.d/named-collections.xml:ro
     ports:
-      - "8123:8123"   # HTTP interface → http://localhost:8123
+      # Host port is parameterized like MinIO's console so a machine already running something on 8123
+      # can remap it without editing this file (the installer picks a free port automatically).
+      - "${CLICKHOUSE_HTTP_PORT:-8123}:8123"   # HTTP interface → http://localhost:8123
     expose:
       - "9000"        # Native TCP (internal; avoid clash with MinIO on the same name — use port 9000 on host)
     healthcheck:

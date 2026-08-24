@@ -49,6 +49,25 @@ if ($env:PRIMODEL_REPO_RAW -and $env:PRIMODEL_REPO_RAW.StartsWith('file://')) {
   $UseLocal = $true
 }
 
+# Returns $preferred if nothing holds it, otherwise the next free port above it. A demo that dies
+# because the machine already runs a MinIO on 9001 - and then asks the operator to edit .env and start
+# over - is a demo that fails in front of an audience. Pick a port that works and say which one.
+function Get-FreePort([int]$preferred, [string]$label) {
+  for ($p = $preferred; $p -lt ($preferred + 50); $p++) {
+    $inUse = $false
+    try {
+      # Loopback only: this asks "can a container publish here", which is a HOST binding question.
+      $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, $p)
+      $listener.Start(); $listener.Stop()
+    } catch { $inUse = $true }
+    if (-not $inUse) {
+      if ($p -ne $preferred) { Say "$label port $preferred is taken on this machine - using $p instead" }
+      return $p
+    }
+  }
+  Die "No free port found for $label near $preferred."
+}
+
 function Fetch($rel, $dest) {
   $dir = Split-Path $dest
   if ($dir) { New-Item -ItemType Directory -Force -Path $dir | Out-Null }
@@ -161,14 +180,16 @@ if (Test-Path '.env') {
   $img     = if ($env:PRIMODEL_IMAGE) { $env:PRIMODEL_IMAGE } else { 'ghcr.io/primodel/primodel:latest' }
   # Ports are written into .env so a clash is fixed by editing one file rather than hunting through
   # compose. Overridable up front for machines that already run something on 8080/9001.
-  $studioPort = if ($env:PRIMODEL_PORT) { $env:PRIMODEL_PORT } else { '8080' }
-  $minioPort  = if ($env:MINIO_CONSOLE_PORT) { $env:MINIO_CONSOLE_PORT } else { '9001' }
+  $studioPort = if ($env:PRIMODEL_PORT) { $env:PRIMODEL_PORT } else { Get-FreePort 8080 'Studio' }
+  $minioPort  = if ($env:MINIO_CONSOLE_PORT) { $env:MINIO_CONSOLE_PORT } else { Get-FreePort 9001 'MinIO console' }
+  $chPort     = if ($env:CLICKHOUSE_HTTP_PORT) { $env:CLICKHOUSE_HTTP_PORT } else { Get-FreePort 8123 'ClickHouse' }
   $enc     = New-Secret 48
   $adminPw = New-Password 16
   $pgPw    = New-Password 16
   @"
 PRIMODEL_PORT=$studioPort
 MINIO_CONSOLE_PORT=$minioPort
+CLICKHOUSE_HTTP_PORT=$chPort
 PRIMODEL_IMAGE=$img
 PRIMODEL_ENCRYPTION_KEY=$enc
 PRIMODEL_BOOTSTRAP_PASSWORD=$adminPw
@@ -191,7 +212,10 @@ if ($freshEnv -and (Test-Path 'data/postgres') -and (Get-ChildItem 'data/postgre
 # right for the published image and wrong for one you built or side-loaded yourself: compose would try
 # to pull `primodel:local` from a registry and fail. When the configured image is already present
 # locally, drop in an override that skips the pull - which is what makes an offline demo possible.
-$image = (Select-String -Path '.env' -Pattern '^PRIMODEL_IMAGE=(.*)$').Matches.Groups[1].Value
+# Only for an image the operator NAMED. Skipping the pull just because a copy happens to be cached
+# would defeat pull_policy: always and quietly run yesterday's build - the exact staleness that policy
+# exists to prevent.
+$image = if ($env:PRIMODEL_IMAGE) { (Select-String -Path '.env' -Pattern '^PRIMODEL_IMAGE=(.*)$').Matches.Groups[1].Value } else { $null }
 if ($image -and (docker image inspect $image 2>$null)) {
   Say "Using the local image $image (skipping registry pull)"
   @"
@@ -226,6 +250,8 @@ $port    = (Select-String -Path '.env' -Pattern '^PRIMODEL_PORT=(.*)$').Matches.
 # viewer of a demo to a dead link.
 $minioConsole = (Select-String -Path '.env' -Pattern '^MINIO_CONSOLE_PORT=(.*)$').Matches.Groups[1].Value
 if (-not $minioConsole) { $minioConsole = '9001' }
+$chHttp = (Select-String -Path '.env' -Pattern '^CLICKHOUSE_HTTP_PORT=(.*)$').Matches.Groups[1].Value
+if (-not $chHttp) { $chHttp = '8123' }
 $adminPw = (Select-String -Path '.env' -Pattern '^PRIMODEL_BOOTSTRAP_PASSWORD=(.*)$').Matches.Groups[1].Value
 if (-not $port) { $port = '8080' }
 
@@ -329,11 +355,13 @@ if ($mode -eq 'lake') {
   Write-Host ''
   Write-Host '  Lake services:'
   Write-Host "    MinIO console   http://localhost:$minioConsole  (minioadmin / minioadmin)"
-  Write-Host '    Iceberg REST    http://localhost:8181/v1/namespaces/primodel/tables'
-  Write-Host '    ClickHouse      http://localhost:8123/play'
+  Write-Host "    ClickHouse      http://localhost:$chHttp/play"
+  # The Iceberg REST catalog is deliberately NOT published to the host - it is reached over the compose
+  # network by Primodel and ClickHouse. Printing a localhost URL for it sent people to a dead link.
+  Write-Host '    Iceberg REST    internal only - docker compose exec clickhouse curl http://iceberg-rest:8181/v1/namespaces/primodel/tables'
   Write-Host ''
   Write-Host '  The seed replicates the golden Person entity into Iceberg silver on MinIO. Query it back'
-  Write-Host '  from ClickHouse at http://localhost:8123/play :'
+  Write-Host "  from ClickHouse at http://localhost:$chHttp/play :"
   Write-Host "    SELECT * FROM iceberg(primodel_lake, filename='silver/hr/person') LIMIT 5"
 }
 Write-Host ''

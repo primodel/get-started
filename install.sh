@@ -96,6 +96,25 @@ fi
 # `down` — a mismatch there leaves orphan lake containers running against a stopped stack.
 dc() { docker compose "${COMPOSE_FILES[@]}" "$@"; }
 
+# Echoes $1 if nothing holds it, otherwise the next free port above it. A demo that dies because the
+# machine already runs a MinIO on 9001 - and then asks the operator to edit .env and start over - is a
+# demo that fails in front of an audience. Pick a port that works and say which one.
+free_port() {
+  preferred="$1"; label="$2"; p="$preferred"; limit=$((preferred + 50))
+  while [ "$p" -lt "$limit" ]; do
+    # A host binding question, so ask the host: nothing listening on loopback means a container can
+    # publish there. Uses whatever is available - bash's /dev/tcp, else nc, else assume free.
+    if { exec 3<>"/dev/tcp/127.0.0.1/$p"; } 2>/dev/null; then
+      exec 3>&- 3<&-           # something answered: in use
+    else
+      [ "$p" != "$preferred" ] && say "$label port $preferred is taken on this machine - using $p instead"
+      printf '%s' "$p"; return 0
+    fi
+    p=$((p + 1))
+  done
+  die "No free port found for $label near $preferred."
+}
+
 say "Setting up Primodel in ./${TARGET_DIR}"
 mkdir -p "$TARGET_DIR"
 cd "$TARGET_DIR"
@@ -144,11 +163,15 @@ if [ -f .env ]; then
 else
   FRESH_ENV=1
   say "Generating .env with fresh secrets"
+  PRIMODEL_PORT="${PRIMODEL_PORT:-$(free_port 8080 'Studio')}"
+  MINIO_CONSOLE_PORT="${MINIO_CONSOLE_PORT:-$(free_port 9001 'MinIO console')}"
+  CLICKHOUSE_HTTP_PORT="${CLICKHOUSE_HTTP_PORT:-$(free_port 8123 'ClickHouse')}"
   ENC_KEY="$(rand 48)"
   ADMIN_PW="$(rand 12 | tr -d '/+=' | cut -c1-16)"
   cat > .env <<EOF
-PRIMODEL_PORT=${PRIMODEL_PORT:-8080}
-MINIO_CONSOLE_PORT=${MINIO_CONSOLE_PORT:-9001}
+PRIMODEL_PORT=${PRIMODEL_PORT}
+MINIO_CONSOLE_PORT=${MINIO_CONSOLE_PORT}
+CLICKHOUSE_HTTP_PORT=${CLICKHOUSE_HTTP_PORT}
 PRIMODEL_IMAGE=${PRIMODEL_IMAGE:-ghcr.io/primodel/primodel:latest}
 PRIMODEL_ENCRYPTION_KEY=${ENC_KEY}
 PRIMODEL_BOOTSTRAP_PASSWORD=${ADMIN_PW}
@@ -189,6 +212,8 @@ PORT="${PORT:-8080}"
 # ones actually published. Printing 9001 while MinIO listens on 9101 sends a demo viewer to a dead link.
 MINIO_CONSOLE="$(grep -E '^MINIO_CONSOLE_PORT=' .env | cut -d= -f2)"
 MINIO_CONSOLE="${MINIO_CONSOLE:-9001}"
+CH_HTTP="$(grep -E '^CLICKHOUSE_HTTP_PORT=' .env | cut -d= -f2)"
+CH_HTTP="${CH_HTTP:-8123}"
 
 # ── Wait for Primodel to become healthy ──────────────────────────────────────
 say "Waiting for Primodel to become healthy (this may take up to 2 minutes)…"
@@ -264,11 +289,11 @@ if [ "$MODE" = lake ]; then
   LAKE_HELP="
   Lake services:
     MinIO console   http://localhost:${MINIO_CONSOLE}  (minioadmin / minioadmin)
-    Iceberg REST    http://localhost:8181/v1/namespaces/primodel/tables
-    ClickHouse      http://localhost:8123/play
+    ClickHouse      http://localhost:${CH_HTTP}/play
+    Iceberg REST    internal only — docker compose exec clickhouse curl http://iceberg-rest:8181/v1/namespaces/primodel/tables
 
   The seed replicates the golden Person entity into Iceberg silver on MinIO. Query it back:
-    curl 'http://localhost:8123/?query=SELECT+*+FROM+iceberg(primodel_lake,filename=%27silver/hr/person%27)+LIMIT+5'
+    curl 'http://localhost:${CH_HTTP}/?query=SELECT+*+FROM+iceberg(primodel_lake,filename=%27silver/hr/person%27)+LIMIT+5'
 "
 else
   LAKE_HELP=""
