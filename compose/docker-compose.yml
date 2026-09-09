@@ -80,6 +80,17 @@ services:
       - ./data/softhsm/lib:/opt/softhsm/lib
     restart: "no"
 
+  # One-shot: makes the plugin-packages volume writable by the app's non-root uid. A fresh named volume is
+  # created root-owned 0755, so the app (uid 1001, gid 0) cannot unpack an installed driver into it and every
+  # install fails with "Access to the path '/var/lib/primodel' is denied". Same shape as softhsm-init above:
+  # fix the volume, exit, and let primodel wait on the successful exit.
+  plugin-packages-init:
+    image: busybox:1.36
+    command: ["sh", "-c", "mkdir -p /packages && chown 1001:0 /packages && chmod 775 /packages"]
+    volumes:
+      - plugin-packages:/packages
+    restart: "no"
+
   primodel:
     image: ${PRIMODEL_IMAGE:-ghcr.io/primodel/primodel:latest}
     pull_policy: always   # always fetch the referenced tag so a stale local cache can't serve an old build
@@ -91,6 +102,8 @@ services:
       http-demo:
         condition: service_started
       softhsm-init:
+        condition: service_completed_successfully
+      plugin-packages-init:
         condition: service_completed_successfully
     environment:
       # ── Required backing services ──
@@ -144,6 +157,11 @@ services:
       Primodel__DemoSeed__DataStorePassword: "${POSTGRES_PASSWORD:-postgres}"
     volumes:
       - ./data/object-store:/data/object-store
+      # Installed driver packages are unpacked here. Without this volume they live only in the container's
+      # writable layer, so recreating the container silently un-installs every driver — the catalogue still
+      # lists them as installed while the files are gone. A named volume, not ./data: the app runs as a
+      # non-root uid that cannot take ownership of a host bind mount on Windows or macOS.
+      - plugin-packages:/var/lib/primodel/packages
       # ── SoftHSM: PKCS#11 module + token, published by softhsm-init onto the same volumes ──
       # /opt/softhsm/lib holds libsofthsm2.so (PRIMODEL_KEK's module= path above); the image has no
       # softhsm2 package of its own, so it can only load the library from this bind mount.
@@ -193,3 +211,7 @@ services:
 # No named volumes: all persistent state is bind-mounted under ./data next to this file (see each
 # service). That keeps every install directory self-contained and avoids Docker's global, project-
 # scoped named volumes silently persisting old credentials across re-runs and separate folders.
+
+volumes:
+  # Installed driver packages — survives `docker compose up -d` recreating the app container.
+  plugin-packages:

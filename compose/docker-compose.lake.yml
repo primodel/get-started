@@ -76,7 +76,10 @@ services:
         condition: service_completed_successfully
     environment:
       CATALOG_CATALOG__IMPL: org.apache.iceberg.jdbc.JdbcCatalog
-      CATALOG_URI: jdbc:sqlite:/tmp/catalog.db
+      # WAL + a busy timeout: the catalog's default SQLite backend serialises writers, and two entities
+      # committing at once made it answer 500 "database is locked" rather than waiting its turn. WAL lets a
+      # reader and a writer overlap; the timeout makes a contending writer wait instead of failing at once.
+      CATALOG_URI: jdbc:sqlite:file:/tmp/catalog.db?journal_mode=WAL&busy_timeout=10000
       CATALOG_WAREHOUSE: s3://primodel-lake/warehouse
       CATALOG_IO__IMPL: org.apache.iceberg.aws.s3.S3FileIO
       CATALOG_S3_ENDPOINT: http://minio:9000
