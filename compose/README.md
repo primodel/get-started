@@ -213,4 +213,5 @@ both the single-container (`role=all`) and split (`worker.enabled=true`) topolog
 See [`../SECURITY.md`](../SECURITY.md#signature-verification) for the full picture. Short version: images
 are signed keylessly with cosign (Sigstore Fulcio/Rekor) today, and will additionally be signed with a key
 pair (`primodel.pub`, from github.com/primodel/releases) — offline/air-gapped verification with
-`cosign verify --key primodel.pub` applies from the first key-signed release onward; it is not yet live.
+`cosign verify --key primodel.pub` applies to 3.1.2 and every release after it. Earlier images are
+keyless-signed only and will not verify against `primodel.pub`.

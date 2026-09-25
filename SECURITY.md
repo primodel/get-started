@@ -13,7 +13,8 @@ Please report suspected vulnerabilities privately — do not open a public GitHu
   (or use the direct link:
   [github.com/primodel/get-started/security/advisories/new](https://github.com/primodel/get-started/security/advisories/new)).
   This opens a private advisory visible only to maintainers until it is published.
-- **Email**: support@wadmanit.se
+- **Email**: security@primodel.io (a monitored mailbox for security reports only — customer support is
+  support@primodel.io and is not a disclosure channel)
 
 Please include: affected component/version, a description of the issue, reproduction steps or a
 proof-of-concept, and the potential impact. We will acknowledge receipt and work with you on a
@@ -92,9 +93,9 @@ be signed with a dedicated key pair. The public key, `primodel.pub`, is publishe
 [github.com/primodel/releases](https://github.com/primodel/releases), on the
 [security page](https://primodel.io/security), and linked from each release's notes.
 
-> **Key-based signing is not yet live** — the release workflow change and the key pair are both pending.
-> The `--key` command below applies from the first release published with key-based signing onward;
-> images published before that release are not key-signed and will not verify against `primodel.pub`.
+> **Key-based signing starts at 3.1.2.** The `--key` command below applies to 3.1.2 and every release
+> after it. Images published earlier are keyless-signed only and will not verify against
+> `primodel.pub` — verify those with the keyless command above.
 
 **Offline / air-gapped (recommended when mirroring into an internal registry):**
 

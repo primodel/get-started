@@ -63,8 +63,9 @@ VPC, or use the Cloud SQL Auth Proxy. Then follow the
 See [`SECURITY.md`](../../SECURITY.md#signature-verification) for the full picture. Images are signed
 keylessly with cosign (Sigstore Fulcio/Rekor) today, and will additionally be signed with a key pair —
 the recommended path for an air-gapped GKE cluster, since offline verification with
-`cosign verify --key primodel.pub` needs no network access to Rekor/Fulcio. That command applies from the
-first key-signed release onward; it is not yet live. The public key, `primodel.pub`, will be published at
+`cosign verify --key primodel.pub` needs no network access to Rekor/Fulcio. That command applies to 3.1.2
+and every release after it; earlier images are keyless-signed only. The public key, `primodel.pub`, is
+published at
 [github.com/primodel/releases](https://github.com/primodel/releases) and on the
 [security page](https://primodel.io/security).
 
