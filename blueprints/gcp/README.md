@@ -58,23 +58,27 @@ VPC, or use the Cloud SQL Auth Proxy. Then follow the
 [Google Cloud blueprint](https://primodel.io/docs/blueprints/gcp/) to `helm install`. Set
 `secrets.encryptionKey` (`openssl rand -base64 48`) and `secrets.bootstrapPassword`.
 
-## Supply-chain verification — PENDING
+## Supply-chain verification
 
-> **PENDING — see [`SECURITY.md`](../../SECURITY.md#signature-verification--pending).** Published images
-> are signed today with keyless cosign (Sigstore Fulcio/Rekor), but the signing model is still an open
-> owner decision, and keyless verification needs the verifier to reach Rekor/Fulcio — which an air-gapped
-> GKE cluster can't do. No `cosign verify` command is published here yet; a command tied to the wrong
-> signing model would fail in exactly the offline/private-cluster setups this blueprint targets.
+See [`SECURITY.md`](../../SECURITY.md#signature-verification) for the full picture. Images are signed
+keylessly with cosign (Sigstore Fulcio/Rekor) today, and will additionally be signed with a key pair —
+the recommended path for an air-gapped GKE cluster, since offline verification with
+`cosign verify --key primodel.pub` needs no network access to Rekor/Fulcio. That command applies from the
+first key-signed release onward; it is not yet live. The public key, `primodel.pub`, will be published at
+[github.com/primodel/releases](https://github.com/primodel/releases) and on the
+[security page](https://primodel.io/security).
 
 ### Optional: admission policy (illustrative only)
 
-Once the signing model above is settled, you can enforce that only signed Primodel images run in the
-cluster with a [Sigstore `policy-controller`](https://docs.sigstore.dev/policy-controller/overview/)
+Once `primodel.pub` is published, you can enforce that only signed Primodel images run in the cluster
+with a [Sigstore `policy-controller`](https://docs.sigstore.dev/policy-controller/overview/)
 `ClusterImagePolicy`. This is **not wired up by this Terraform module** — it's an example to adapt:
 
 ```yaml
 # EXAMPLE — illustrative only, not applied by this module.
 # Requires policy-controller installed in the cluster (see Sigstore docs).
+# Key-based verification against primodel.pub (github.com/primodel/releases) — available from the
+# first key-signed release onward (see SECURITY.md).
 apiVersion: policy.sigstore.dev/v1beta1
 kind: ClusterImagePolicy
 metadata:
@@ -83,19 +87,13 @@ spec:
   images:
     - glob: "ghcr.io/primodel/primodel:**"
   authorities:
-    - keyless:
-        # TODO once the signing model is finalised (see SECURITY.md):
-        #   - url: the Fulcio instance that issued the signing cert (public Sigstore, or a
-        #     private Fulcio if Primodel moves off public keyless)
-        url: https://fulcio.sigstore.dev
-        identities:
-          # TODO: fill in the actual OIDC issuer + subject the release pipeline signs with
-          - issuer: "https://token.actions.githubusercontent.com"
-            subject: "https://github.com/primodel/REPLACE_ME/.github/workflows/REPLACE_ME.yml@refs/heads/main"
-      ctlog:
-        url: https://rekor.sigstore.dev
+    - key:
+        # Paste the contents of primodel.pub here.
+        data: |
+          -----BEGIN PUBLIC KEY-----
+          REPLACE_ME
+          -----END PUBLIC KEY-----
 ```
 
-Fields to fill in once the signing decision is made: `authorities[].keyless.url` (or switch to
-`authorities[].key.data` if the project moves to a static/KMS-backed key instead of keyless), and
-`authorities[].keyless.identities[].issuer` / `subject` to match the actual release workflow.
+Field to fill in once `primodel.pub` is published: `authorities[].key.data` — the contents of the key
+itself.

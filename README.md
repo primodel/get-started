@@ -150,9 +150,9 @@ Removing the lake data drops all Iceberg metadata and bronze objects. The canoni
 
 Full docs, including production deployment guidance, live at <https://primodel.io/docs/>.
 
-## Supply-chain verification — PENDING
+## Supply-chain verification
 
-> **PENDING — see [`SECURITY.md`](./SECURITY.md#signature-verification--pending).** Published images are
-> signed today with keyless cosign (Sigstore Fulcio/Rekor), but the signing model is still an open owner
-> decision, and keyless verification needs the verifier to reach Rekor/Fulcio, which an offline/air-gapped
-> environment can't do. No `cosign verify` command is published here yet.
+See [`SECURITY.md`](./SECURITY.md#signature-verification) for the full picture. Short version: images are
+signed keylessly with cosign (Sigstore Fulcio/Rekor) today, and will additionally be signed with a key
+pair (`primodel.pub`, from github.com/primodel/releases) — offline/air-gapped verification with
+`cosign verify --key primodel.pub` applies from the first key-signed release onward; it is not yet live.

@@ -208,9 +208,9 @@ settings at managed Postgres, NATS and S3 rather than the bundled single-node se
 Use the included Helm chart (`helm/primodel`) for Kubernetes deployments — it supports
 both the single-container (`role=all`) and split (`worker.enabled=true`) topologies.
 
-## Supply-chain verification — PENDING
+## Supply-chain verification
 
-> **PENDING — see [`../SECURITY.md`](../SECURITY.md#signature-verification--pending).** Published images
-> are signed today with keyless cosign (Sigstore Fulcio/Rekor), but the signing model is still an open
-> owner decision, and keyless verification needs the verifier to reach Rekor/Fulcio, which an
-> offline/air-gapped environment can't do. No `cosign verify` command is published here yet.
+See [`../SECURITY.md`](../SECURITY.md#signature-verification) for the full picture. Short version: images
+are signed keylessly with cosign (Sigstore Fulcio/Rekor) today, and will additionally be signed with a key
+pair (`primodel.pub`, from github.com/primodel/releases) — offline/air-gapped verification with
+`cosign verify --key primodel.pub` applies from the first key-signed release onward; it is not yet live.

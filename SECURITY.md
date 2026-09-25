@@ -13,7 +13,7 @@ Please report suspected vulnerabilities privately — do not open a public GitHu
   (or use the direct link:
   [github.com/primodel/get-started/security/advisories/new](https://github.com/primodel/get-started/security/advisories/new)).
   This opens a private advisory visible only to maintainers until it is published.
-- **Email**: `{{SECURITY_EMAIL — OWNER DECISION PENDING}}`
+- **Email**: support@wadmanit.se
 
 Please include: affected component/version, a description of the issue, reproduction steps or a
 proof-of-concept, and the potential impact. We will acknowledge receipt and work with you on a
@@ -81,13 +81,33 @@ The end date of the support period for each release line is published on the sec
 Actively exploited vulnerabilities are reported to ENISA and/or the coordinating CSIRT as required under
 EU CRA Art. 14.
 
-## Signature verification — PENDING
+## Signature verification
 
-> **PENDING — signing model is an open owner decision.** Published images **are** signed today with
-> **keyless cosign** (Sigstore Fulcio/Rekor). However, keyless verification requires the verifier to
-> reach Rekor/Fulcio over the network at verification time, which an air-gapped or fully offline
-> environment cannot do. Whether the long-term signing model stays keyless, moves to a KMS-backed key, or
-> offers both is not yet decided. Until that decision is made and documented here, we are **not**
-> publishing a `cosign verify` command, because a command tied to the wrong signing model would fail
-> silently or fail outright in offline environments. Check back here, or the
-> [Security tab](https://github.com/primodel/get-started/security), once this is resolved.
+Published images are signed **keylessly with cosign** (Sigstore Fulcio/Rekor), and will **additionally**
+be signed with a dedicated key pair. The public key, `primodel.pub`, is published at
+[github.com/primodel/releases](https://github.com/primodel/releases), on the
+[security page](https://primodel.io/security), and linked from each release's notes.
+
+> **Key-based signing is not yet live** — the release workflow change and the key pair are both pending.
+> The `--key` command below applies from the first release published with key-based signing onward;
+> images published before that release are not key-signed and will not verify against `primodel.pub`.
+
+**Offline / air-gapped (recommended when mirroring into an internal registry):**
+
+```bash
+cosign verify --key primodel.pub ghcr.io/primodel/primodel:<version>
+```
+
+This needs no network access to Sigstore. Verify at mirror time — before the image enters your internal
+registry.
+
+**Online (keyless):**
+
+```bash
+cosign verify ghcr.io/primodel/primodel:<version> \
+  --certificate-identity-regexp '^https://github.com/Wadman-IT/Primodel/.github/workflows/.*' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+```
+
+This requires the verifier to reach Sigstore's Fulcio and Rekor services over the network at verification
+time.
