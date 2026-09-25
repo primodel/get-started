@@ -8,17 +8,31 @@ disclosure expectations of EU CRA Annex I, Part II, points 5–6.
 
 Please report suspected vulnerabilities privately — do not open a public GitHub issue.
 
-- **Preferred: GitHub private vulnerability reporting** on this repository — go to the
-  [Security tab](https://github.com/primodel/get-started/security) and select **Report a vulnerability**
-  (or use the direct link:
-  [github.com/primodel/get-started/security/advisories/new](https://github.com/primodel/get-started/security/advisories/new)).
-  This opens a private advisory visible only to maintainers until it is published.
-- **Email**: security@primodel.io (a monitored mailbox for security reports only — customer support is
-  support@primodel.io and is not a disclosure channel)
+**With a GitHub account** — the quickest route:
 
-Please include: affected component/version, a description of the issue, reproduction steps or a
-proof-of-concept, and the potential impact. We will acknowledge receipt and work with you on a
-coordinated disclosure timeline (see **Commitment** below).
+> **[Report privately on GitHub →](https://github.com/primodel/releases/security/advisories/new)**
+
+You will need to sign in. Your report is visible only to you and to us, and you can follow its status in
+the same thread. (Reports for every Primodel repository come in through `primodel/releases`, which is the
+repository that carries the images, SBOMs and the signing key.)
+
+**Without a GitHub account** — email **security@primodel.io**. You do not need an account to report a
+vulnerability to us. That mailbox is for security reports only; customer support is support@primodel.io and
+is not a disclosure channel.
+
+Please include:
+
+- the affected Primodel version;
+- steps to reproduce;
+- the impact — what an attacker could achieve; and
+- any proof-of-concept, if you have one.
+
+Please do **not** report vulnerabilities in public GitHub issues, forums or on social media — that exposes
+other users before a fix exists.
+
+**What happens next:** we confirm receipt, assess the report within **seven (7) working days**, and release
+a fix within **thirty (30) days** of confirming it (see **Commitment** below, and the
+[security page](https://primodel.io/security/)).
 
 ## Scope
 
