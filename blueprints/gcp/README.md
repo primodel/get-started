@@ -1,5 +1,7 @@
 # Primodel on Google Cloud — Terraform
 
+> **Examples, not supported deliverables; customise for your environment.**
+
 Provisions the managed backing services for Primodel and the S3-compatible access to GCS, then outputs
 the values to deploy the workload with the [Helm chart](../../helm/primodel):
 
@@ -55,3 +57,44 @@ Reach Cloud SQL over its **private IP** (shown in `database_url`) from GKE — n
 VPC, or use the Cloud SQL Auth Proxy. Then follow the
 [Google Cloud blueprint](https://primodel.io/docs/blueprints/gcp/) to `helm install`. Set
 `secrets.encryptionKey` (`openssl rand -base64 48`) and `secrets.bootstrapPassword`.
+
+## Supply-chain verification
+
+See [`SECURITY.md`](../../SECURITY.md#signature-verification) for the full picture. Images are signed
+keylessly with cosign (Sigstore Fulcio/Rekor) today, and will additionally be signed with a key pair —
+the recommended path for an air-gapped GKE cluster, since offline verification with
+`cosign verify --key primodel.pub` needs no network access to Rekor/Fulcio. That command applies to 3.1.2
+and every release after it; earlier images are keyless-signed only. The public key, `primodel.pub`, is
+published at
+[github.com/primodel/releases](https://github.com/primodel/releases) and on the
+[security page](https://primodel.io/security).
+
+### Optional: admission policy (illustrative only)
+
+Once `primodel.pub` is published, you can enforce that only signed Primodel images run in the cluster
+with a [Sigstore `policy-controller`](https://docs.sigstore.dev/policy-controller/overview/)
+`ClusterImagePolicy`. This is **not wired up by this Terraform module** — it's an example to adapt:
+
+```yaml
+# EXAMPLE — illustrative only, not applied by this module.
+# Requires policy-controller installed in the cluster (see Sigstore docs).
+# Key-based verification against primodel.pub (github.com/primodel/releases) — available from the
+# first key-signed release onward (see SECURITY.md).
+apiVersion: policy.sigstore.dev/v1beta1
+kind: ClusterImagePolicy
+metadata:
+  name: primodel-image-policy
+spec:
+  images:
+    - glob: "ghcr.io/primodel/primodel:**"
+  authorities:
+    - key:
+        # Paste the contents of primodel.pub here.
+        data: |
+          -----BEGIN PUBLIC KEY-----
+          REPLACE_ME
+          -----END PUBLIC KEY-----
+```
+
+Field to fill in once `primodel.pub` is published: `authorities[].key.data` — the contents of the key
+itself.

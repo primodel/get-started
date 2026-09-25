@@ -1,5 +1,7 @@
 # Primodel on Azure — Terraform
 
+> **Examples, not supported deliverables; customise for your environment.**
+
 Provisions **Azure Database for PostgreSQL Flexible Server** (private, VNet-integrated) for Primodel, and
 outputs the values to deploy the workload with the [Helm chart](../../helm/primodel).
 
@@ -49,3 +51,44 @@ tofu output helm_values          # → config.storage + persistence
 
 Then follow the [Azure blueprint](https://primodel.io/docs/blueprints/azure/) to `helm install`. Set
 `secrets.encryptionKey` (`openssl rand -base64 48`) and `secrets.bootstrapPassword`.
+
+## Supply-chain verification
+
+See [`SECURITY.md`](../../SECURITY.md#signature-verification) for the full picture. Images are signed
+keylessly with cosign (Sigstore Fulcio/Rekor) today, and will additionally be signed with a key pair —
+the recommended path for an air-gapped AKS cluster, since offline verification with
+`cosign verify --key primodel.pub` needs no network access to Rekor/Fulcio. That command applies to 3.1.2
+and every release after it; earlier images are keyless-signed only. The public key, `primodel.pub`, is
+published at
+[github.com/primodel/releases](https://github.com/primodel/releases) and on the
+[security page](https://primodel.io/security).
+
+### Optional: admission policy (illustrative only)
+
+Once `primodel.pub` is published, you can enforce that only signed Primodel images run in the cluster
+with a [Sigstore `policy-controller`](https://docs.sigstore.dev/policy-controller/overview/)
+`ClusterImagePolicy`. This is **not wired up by this Terraform module** — it's an example to adapt:
+
+```yaml
+# EXAMPLE — illustrative only, not applied by this module.
+# Requires policy-controller installed in the cluster (see Sigstore docs).
+# Key-based verification against primodel.pub (github.com/primodel/releases) — available from the
+# first key-signed release onward (see SECURITY.md).
+apiVersion: policy.sigstore.dev/v1beta1
+kind: ClusterImagePolicy
+metadata:
+  name: primodel-image-policy
+spec:
+  images:
+    - glob: "ghcr.io/primodel/primodel:**"
+  authorities:
+    - key:
+        # Paste the contents of primodel.pub here.
+        data: |
+          -----BEGIN PUBLIC KEY-----
+          REPLACE_ME
+          -----END PUBLIC KEY-----
+```
+
+Field to fill in once `primodel.pub` is published: `authorities[].key.data` — the contents of the key
+itself.
