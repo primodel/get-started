@@ -1,5 +1,7 @@
 # Primodel — Docker Compose quickstart
 
+> **Examples, not supported deliverables; customise for your environment.**
+
 Runs Primodel and its required backing services on your machine with one command.
 
 ## What it starts
@@ -205,3 +207,10 @@ For real deployments, point `ConnectionStrings__DefaultConnection`, `Nats__Url` 
 settings at managed Postgres, NATS and S3 rather than the bundled single-node services.
 Use the included Helm chart (`helm/primodel`) for Kubernetes deployments — it supports
 both the single-container (`role=all`) and split (`worker.enabled=true`) topologies.
+
+## Supply-chain verification — PENDING
+
+> **PENDING — see [`../SECURITY.md`](../SECURITY.md#signature-verification--pending).** Published images
+> are signed today with keyless cosign (Sigstore Fulcio/Rekor), but the signing model is still an open
+> owner decision, and keyless verification needs the verifier to reach Rekor/Fulcio, which an
+> offline/air-gapped environment can't do. No `cosign verify` command is published here yet.

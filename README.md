@@ -1,5 +1,7 @@
 # Get started with Primodel
 
+> **Examples, not supported deliverables; customise for your environment.**
+
 Ways to run [Primodel](https://primodel.io) — the governed canonical data platform — locally or in your
 own infrastructure. Each method lives in its own directory so you can pick what fits.
 
@@ -147,3 +149,10 @@ Removing the lake data drops all Iceberg metadata and bronze objects. The canoni
 ## Documentation
 
 Full docs, including production deployment guidance, live at <https://primodel.io/docs/>.
+
+## Supply-chain verification — PENDING
+
+> **PENDING — see [`SECURITY.md`](./SECURITY.md#signature-verification--pending).** Published images are
+> signed today with keyless cosign (Sigstore Fulcio/Rekor), but the signing model is still an open owner
+> decision, and keyless verification needs the verifier to reach Rekor/Fulcio, which an offline/air-gapped
+> environment can't do. No `cosign verify` command is published here yet.
