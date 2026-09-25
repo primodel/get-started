@@ -72,9 +72,13 @@ VEX (Vulnerability Exploitability eXchange) statements are published when availa
 
 ## Support Period
 
-The Support Period for Primodel ends no earlier than **December 2032**. The current end date is published on the
-security page at [primodel.io/security](https://primodel.io/security) and is reviewed annually; it may be extended
-but will not be shortened.
+In line with the EU Cyber Resilience Act, Primodel's Support Period has a current end date, reviewed annually; it
+may be extended but will not be shortened. This document does not restate that date, since a static file cannot
+keep it current — the authoritative current end date is always published at:
+
+- the security page: [primodel.io/security](https://primodel.io/security)
+- the machine-readable copy: [support-period.json](https://github.com/primodel/releases/blob/main/support-period.json)
+  in [github.com/primodel/releases](https://github.com/primodel/releases)
 
 ## Regulatory reporting
 
