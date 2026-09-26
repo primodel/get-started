@@ -4,7 +4,7 @@
 
 ## Security self-review (SEC §2)
 
-<!-- Tick what you checked. Strike through or write "n/a" for items that don't apply; don't delete them. -->
+<!-- Tick every item; a required check blocks the merge while any box is unticked. For an item that doesn't apply, tick it and write "n/a" after it. Don't delete items. -->
 
 - [ ] **Data and tenant boundary.** Which data does this touch? Tenant isolation holds in the data access layer.
 - [ ] **Authentication and authorisation.** Every new or changed endpoint checks who is calling and what they may do.
