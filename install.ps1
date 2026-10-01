@@ -215,7 +215,17 @@ if ($freshEnv -and (Test-Path 'data/postgres') -and (Get-ChildItem 'data/postgre
 # would defeat pull_policy: always and quietly run yesterday's build - the exact staleness that policy
 # exists to prevent.
 $image = if ($env:PRIMODEL_IMAGE) { (Select-String -Path '.env' -Pattern '^PRIMODEL_IMAGE=(.*)$').Matches.Groups[1].Value } else { $null }
-if ($image -and (docker image inspect $image 2>$null)) {
+# Judge "is it here?" by the EXIT CODE, never by the output. `docker image inspect` prints an empty JSON
+# array to stdout for an image it cannot find and exits 1 - and `[]` is a non-empty string, so a plain
+# `if (docker image inspect $image)` is true whether the image is present or not. That inverted the test:
+# every pinned PRIMODEL_IMAGE got `pull_policy: never`, so pinning a published tag - which .env.example
+# tells you to do for a reproducible install - failed with "No such image" and never tried to fetch it.
+$imageIsLocal = $false
+if ($image) {
+  docker image inspect $image *> $null
+  $imageIsLocal = ($LASTEXITCODE -eq 0)
+}
+if ($imageIsLocal) {
   Say "Using the local image $image (skipping registry pull)"
   @"
 # Written by install.ps1: $image is present locally, so do not try to pull it.
