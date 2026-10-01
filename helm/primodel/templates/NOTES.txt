@@ -38,7 +38,7 @@ SPLIT TOPOLOGY (role=api + role=worker):
   Two rules you MUST keep in mind:
 
   1. WORKER PAIRING IS REQUIRED. The api Deployment serves requests but has no background
-     workers. Ingestion and integration jobs queue durably on NATS while workers are absent,
+     workers. Ingestion and pipeline jobs queue durably on NATS while workers are absent,
      so there is no data loss — but jobs only execute when at least one worker pod is Ready.
      Never run role=api without at least one role=worker (or role=all) pod.
 

@@ -14,7 +14,7 @@
 # keep it in mind before adding one.
 
 [Scheduler]
-# Faster integration polling for local exploration, so newly-scheduled ingests show up quickly in
+# Faster pipeline polling for local exploration, so newly-scheduled ingests show up quickly in
 # the UI. There is no PRIMODEL_* env var for this setting — it only reaches the app through this
 # overlay (or the ConfigMap layer / DB runtime_settings), which is why it's a good one to demonstrate
 # the mount with rather than something env-mappable.

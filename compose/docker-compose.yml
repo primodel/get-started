@@ -46,7 +46,7 @@ services:
       - ./data/nats:/data
     restart: unless-stopped
 
-  # [DEMO ONLY] Static file server: serves demo source files (JSON/XML/CSV) to the seeded integrations.
+  # [DEMO ONLY] Static file server: serves demo source files (JSON/XML/CSV) to the seeded pipelines.
   # Primodel__DemoSeed__SourceBaseUrl points here so the demo ingest flows can fetch them over HTTP.
   # Not exposed to the host — internal only (primodel → http-demo).
   http-demo:
@@ -148,7 +148,7 @@ services:
       # The endpoint is a no-op guard if data already exists (returns 409). Remove for production.
       # INSECURE: seeds well-known demo passwords — NEVER set this on a real install.
       PRIMODEL_DEMO_SEED_INSECURE: "true"
-      # Source base URL: the http-demo nginx service serves demo data files to the integrations.
+      # Source base URL: the http-demo nginx service serves demo data files to the pipelines.
       Primodel__DemoSeed__SourceBaseUrl: "http://http-demo"
       # Demo data store: a separate Postgres DB provisioned by postgres-init/01-create-demo-db.sql.
       Primodel__DemoSeed__DataStoreHost: "postgres"
