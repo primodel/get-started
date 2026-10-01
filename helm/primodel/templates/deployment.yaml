@@ -34,7 +34,7 @@ spec:
           env:
             {{- if .Values.worker.enabled }}
             # Split topology: this Deployment runs role=api (HTTP/GraphQL/MCP only, no workers).
-            # At least one role=worker Deployment must be running to process ingestion/integration jobs.
+            # At least one role=worker Deployment must be running to process ingestion/pipeline jobs.
             - name: PRIMODEL_ROLE
               value: "api"
             {{- end }}

@@ -283,7 +283,7 @@ if (-not $healthy) {
 # installer never claims "ready with the demo dataset" over a half-populated database.
 # Returns 409 if data already exists (idempotent).
 # INSECURE: seeds well-known demo passwords - never set PRIMODEL_DEMO_SEED_INSECURE on a real install.
-Say 'Seeding demo data - this may take 1-2 minutes while integrations run... [DEMO ONLY - INSECURE]'
+Say 'Seeding demo data - this may take 1-2 minutes while pipelines run... [DEMO ONLY - INSECURE]'
 $seedUrl    = "http://localhost:$port/api/seed-demo-data"
 $seedStatus = 0
 try {
@@ -364,7 +364,7 @@ if ($mode -eq 'lake') {
   Write-Host "    SELECT * FROM iceberg(primodel_lake, filename='silver/hr/person') LIMIT 5"
 }
 Write-Host ''
-Write-Host "  [DEMO ONLY] See README for the full demo tour: masking, integrations, MDM golden/quarantine,"
+Write-Host "  [DEMO ONLY] See README for the full demo tour: masking, pipelines, MDM golden/quarantine,"
 Write-Host '  DQ workbench, diagrams, and GraphiQL.'
 Write-Host ''
 Write-Host "Credentials are stored in .\$TargetDir\.env"

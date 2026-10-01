@@ -12,7 +12,7 @@ Runs Primodel and its required backing services on your machine with one command
 | `primodel` | `ghcr.io/primodel/primodel` | The app — UI, REST, GraphQL and OpenAPI (internal; reached via Caddy) |
 | `postgres` | `postgres:18` | Canonical + metadata store (**required**) |
 | `nats` | `nats:2.10` (JetStream) | Ingestion queue, change events, GraphQL subscriptions (**required**) |
-| `http-demo` | `nginx:alpine` | [DEMO ONLY] Serves demo source data files (JSON/XML/CSV) to the seeded integrations |
+| `http-demo` | `nginx:alpine` | [DEMO ONLY] Serves demo source data files (JSON/XML/CSV) to the seeded pipelines |
 | `softhsm-init` | built from `softhsm/` | One-shot: initializes the SoftHSM PKCS#11 token used as the KEK backend, then exits |
 
 The object store defaults to the **local filesystem**, so no S3/MinIO is needed to get started. All
@@ -46,7 +46,7 @@ needed.
 > `false`) before using Primodel with real data.**
 
 The install script (run from the repo root) calls `POST /api/seed-demo-data` after the stack is
-healthy, blocking until all integrations complete. Demo personas:
+healthy, blocking until all pipelines complete. Demo personas:
 
 | Username | Password | Role |
 | --- | --- | --- |
@@ -158,7 +158,7 @@ everything in one container — suitable for local eval and single-node producti
 
 When using `api` + `worker` instead of `all`:
 
-1. **Worker pairing is required.** An `api` node queues ingestion and integration jobs
+1. **Worker pairing is required.** An `api` node queues ingestion and pipeline jobs
    durably on NATS. Jobs are processed only when at least one `worker` node is running.
    Never run `role=api` without a paired `role=worker` (or `role=all`) process.
 

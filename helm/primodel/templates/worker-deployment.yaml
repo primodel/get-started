@@ -4,7 +4,7 @@
 # Scale this independently of the api Deployment; each replica claims independent
 # NATS JetStream shard leases — the ShardLeaseManager handles exclusive ownership.
 #
-# IMPORTANT: At least one worker pod must be Running for ingestion and integration
+# IMPORTANT: At least one worker pod must be Running for ingestion and pipeline
 # jobs to be processed. The api Deployment queues work durably on NATS while workers
 # are absent (no data loss), but processing only resumes when a worker pod is ready.
 apiVersion: apps/v1

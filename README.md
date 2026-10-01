@@ -55,7 +55,7 @@ for both.
 | `install.sh` | The `curl \| bash` bootstrap (macOS / Linux) |
 | `install.ps1` | The `irm \| iex` bootstrap (Windows / PowerShell) |
 | `helm/` | Kubernetes Helm chart — _planned_ |
-| `examples/` | Sample models & integrations — _planned_ |
+| `examples/` | Sample models & pipelines — _planned_ |
 
 ## Demo tour [DEMO ONLY — INSECURE]
 
@@ -69,8 +69,8 @@ The install script seeds a realistic HR + Finance dataset and creates five well-
 | --- | --- | --- | --- |
 | `admin` | `pri-model-is-great` | System Administrator | User management, data store CRUD, platform settings. No direct data access (break-glass for that). |
 | `ada` | `lovelace` | Owner — HR + Finance (Restricted clearance) | Full domain control on both domains. Sees all fields unmasked (Restricted clearance). |
-| `frank` | `borland` | Schema Steward — HR + Finance | Author schema (entities, fields, sensitivity tags, DQ rules). Cannot run integrations or see data above clearance. |
-| `blaise` | `pascal` | Integrator — HR + Finance | Author and run integrations. Can query data within clearance. |
+| `frank` | `borland` | Schema Steward — HR + Finance | Author schema (entities, fields, sensitivity tags, DQ rules). Cannot run pipelines or see data above clearance. |
+| `blaise` | `pascal` | Integrator — HR + Finance | Author and run pipelines. Can query data within clearance. |
 | `grace` | `hopper` | Data Reader — HR only (Internal clearance) | Read HR records up to Internal clearance. `national_id` and `bank_account` (Restricted) are hard-masked. |
 
 Sign in at <http://localhost:8080>.
@@ -81,7 +81,7 @@ Sign in at <http://localhost:8080>.
 
 2. **GraphiQL cross-domain query** — Open <http://localhost:8080/graphiql> (sign into Studio first so the auth cookie carries over). The default query joins HR `Person` with `Assignment.salary` — run it as `ada` to see salary cleartext, then as `grace` to see it masked.
 
-3. **Integration runs** — Sign in as `blaise` (Integrator) and browse to Integrations. The demo has pre-seeded runs for HR (JSON), Payroll (CSV), Organisations (XML), Assignments (XML), Cost Centers (CSV), and Invoices (JSON). Re-run any integration to see the pipeline in action.
+3. **Pipeline runs** — Sign in as `blaise` (Integrator) and browse to Pipelines. The demo has pre-seeded runs for HR (JSON), Payroll (CSV), Organisations (XML), Assignments (XML), Cost Centers (CSV), and Invoices (JSON). Re-run any pipeline to watch it run.
 
 4. **MDM golden record + quarantine** — Browse to the `Person` golden entity. The HR and Payroll sources deliberately share `national_id = 19990101-9999` for two different keys — the Uniqueness Context DQ rule fires on survivorship and quarantines one of them for a steward to resolve.
 
@@ -114,11 +114,11 @@ This adds three services to the running stack:
 | **iceberg-rest** | [tabulario/iceberg-rest](https://github.com/tabular-io/iceberg-rest-image) — the Iceberg REST catalog server. Tracks table metadata on MinIO; the Primodel replication engine writes silver Iceberg tables here. |
 | **ClickHouse** | Query-back engine. Reads Iceberg silver tables from MinIO via its native `iceberg()` table function. HTTP interface at <http://localhost:8123>. |
 
-The `PRIMODEL_DEMO_LAKE=true` flag passed to the Primodel container activates the opt-in lake seed on the next `POST /api/seed-demo-data` call (or a fresh install): it registers the MinIO connection + REST catalog config as the sysadmin lake config, flips the `Person` entity's lake-participation flag, and seeds a disabled "Iceberg → Person (lake query-back)" integration ready to be enabled.
+The `PRIMODEL_DEMO_LAKE=true` flag passed to the Primodel container activates the opt-in lake seed on the next `POST /api/seed-demo-data` call (or a fresh install): it registers the MinIO connection + REST catalog config as the sysadmin lake config, flips the `Person` entity's lake-participation flag, and seeds a disabled "Iceberg → Person (lake query-back)" pipeline ready to be enabled.
 
 ### Explore the lake
 
-1. **Browse bronze objects in MinIO** — open <http://localhost:9001>, sign in as `minioadmin / minioadmin`, and navigate to the `primodel-lake` bucket. After the first integration run you'll see raw source files (JSON/CSV/XML) written by the lake tee under `bronze/`.
+1. **Browse bronze objects in MinIO** — open <http://localhost:9001>, sign in as `minioadmin / minioadmin`, and navigate to the `primodel-lake` bucket. After the first pipeline run you'll see raw source files (JSON/CSV/XML) written by the lake tee under `bronze/`.
 
 2. **Inspect the Iceberg REST catalog** — the catalog exposes a JSON API:
    ```bash
@@ -134,7 +134,7 @@ The `PRIMODEL_DEMO_LAKE=true` flag passed to the Primodel container activates th
    ```
    Or open the ClickHouse HTTP interface directly: <http://localhost:8123/play>
 
-4. **Enable the query-back integration in Primodel** — sign in as `blaise` (Integrator). Navigate to **Integrations** and enable the seeded "Iceberg → Person (lake query-back)" integration. Run it: Primodel will read the Iceberg silver `Person` table via ClickHouse and deliver the rows back into the canonical Postgres `Person` entity. This demonstrates that the lake is a governed, query-able data source — not just a write-only archive.
+4. **Enable the query-back pipeline in Primodel** — sign in as `blaise` (Integrator). Navigate to **Pipelines** and enable the seeded "Iceberg → Person (lake query-back)" pipeline. Run it: Primodel will read the Iceberg silver `Person` table via ClickHouse and deliver the rows back into the canonical Postgres `Person` entity. This demonstrates that the lake is a governed, query-able data source — not just a write-only archive.
 
 ### Teardown
 

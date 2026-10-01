@@ -238,7 +238,7 @@ fi
 # installer never claims "ready with the demo dataset" over a half-populated database.
 # Returns 409 if data already exists (idempotent).
 # INSECURE: seeds well-known demo passwords - never set PRIMODEL_DEMO_SEED_INSECURE on a real install.
-say "Seeding demo data - this may take 1-2 minutes while integrations run... [DEMO ONLY - INSECURE]"
+say "Seeding demo data - this may take 1-2 minutes while pipelines run... [DEMO ONLY - INSECURE]"
 SEED_URL="http://localhost:${PORT}/api/seed-demo-data"
 SEED_STATUS=""
 if command -v curl >/dev/null 2>&1; then
@@ -334,7 +334,7 @@ $(say "Primodel is ready with the demo dataset! [DEMO ONLY — INSECURE]")
 ${LAKE_HELP}
 Credentials are stored in ./${TARGET_DIR}/.env.
 
-  [DEMO ONLY] See README for the full demo tour: masking, integrations, MDM golden/quarantine,
+  [DEMO ONLY] See README for the full demo tour: masking, pipelines, MDM golden/quarantine,
   DQ workbench, diagrams, and GraphiQL.
 EOF
 
