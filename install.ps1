@@ -293,6 +293,7 @@ if (-not $healthy) {
 # installer never claims "ready with the demo dataset" over a half-populated database.
 # Returns 409 if data already exists (idempotent).
 # INSECURE: seeds well-known demo passwords - never set PRIMODEL_DEMO_SEED_INSECURE on a real install.
+$seedFailed = $null
 Say 'Seeding demo data - this may take 1-2 minutes while pipelines run... [DEMO ONLY - INSECURE]'
 $seedUrl    = "http://localhost:$port/api/seed-demo-data"
 $seedStatus = 0
@@ -319,16 +320,30 @@ if ($seedStatus -eq 200 -or $seedStatus -eq 202) {
   switch ($seedFinal) {
     'Seeded'         { Say 'Demo data seeded successfully.' }
     'SystemNotEmpty' { Say 'Demo data already present - skipping seed.' }
-    'Failed'         { Write-Host 'Warning: Demo seed FAILED. See: docker compose logs primodel' -ForegroundColor Yellow }
-    default          { Write-Host 'Warning: Demo seed still running after 10 minutes. Check: docker compose logs primodel' -ForegroundColor Yellow }
+    'Failed'         { $seedFailed = 'the seed reported Failed'; Write-Host 'ERROR: Demo seed FAILED.' -ForegroundColor Red }
+    default          { $seedFailed = 'the seed was still running after 10 minutes'; Write-Host 'ERROR: Demo seed did not finish.' -ForegroundColor Red }
   }
 } elseif ($seedStatus -eq 409) {
   Say 'Demo data already present - skipping seed.'
 } else {
-  Write-Host "Warning: Seed returned HTTP $seedStatus. Demo data may be incomplete." -ForegroundColor Yellow
+  $seedFailed = "the seed returned HTTP $seedStatus"
+  Write-Host "ERROR: Seed returned HTTP $seedStatus." -ForegroundColor Red
 }
 
 Write-Host ''
+
+if ($seedFailed) {
+  # The stack is up and usable; the demo DATA is not there. Saying "ready with the demo dataset" here is how a
+  # broken seed went unnoticed across releases — the warning scrolled past and the success line was the last
+  # word. Exit non-zero so a person or a script has to deal with it.
+  Write-Host "Primodel is running, but the demo data is NOT loaded — $seedFailed." -ForegroundColor Red
+  Write-Host ''
+  Write-Host "  Logs:  cd $TargetDir; docker compose $ComposeArgs logs primodel" -ForegroundColor Red
+  Write-Host "  Retry: Invoke-RestMethod -Method Post http://localhost:$port/api/seed-demo-data" -ForegroundColor Red
+  Write-Host ''
+  Write-Host "  Sign in at http://localhost:$port - the platform works, it just has no demo content." -ForegroundColor Red
+  exit 1
+}
 
 Say 'Primodel is ready with the demo dataset! [DEMO ONLY — INSECURE]'
 Write-Host ''
