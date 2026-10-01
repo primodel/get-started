@@ -258,6 +258,7 @@ fi
 # installer never claims "ready with the demo dataset" over a half-populated database.
 # Returns 409 if data already exists (idempotent).
 # INSECURE: seeds well-known demo passwords - never set PRIMODEL_DEMO_SEED_INSECURE on a real install.
+SEED_FAILED=""
 say "Seeding demo data - this may take 1-2 minutes while pipelines run... [DEMO ONLY - INSECURE]"
 SEED_URL="http://localhost:${PORT}/api/seed-demo-data"
 SEED_STATUS=""
@@ -296,13 +297,28 @@ case "$SEED_STATUS" in
     case "$SEED_FINAL" in
       Seeded)         say "Demo data seeded successfully." ;;
       SystemNotEmpty) say "Demo data already present - skipping seed." ;;
-      Failed)         printf '\033[1;33mWarning:\033[0m Demo seed FAILED. See: docker compose logs primodel\n' >&2 ;;
-      *)              printf '\033[1;33mWarning:\033[0m Demo seed still running after 10 minutes. Check: docker compose logs primodel\n' >&2 ;;
+      Failed)         SEED_FAILED="the seed reported Failed"
+                      printf '\033[1;31mERROR:\033[0m Demo seed FAILED.\n' >&2 ;;
+      *)              SEED_FAILED="the seed was still running after 10 minutes"
+                      printf '\033[1;31mERROR:\033[0m Demo seed did not finish.\n' >&2 ;;
     esac
     ;;
   409) say "Demo data already present - skipping seed." ;;
-  *)   printf '\033[1;33mWarning:\033[0m Seed returned HTTP %s. Demo data may be incomplete.\n' "$SEED_STATUS" >&2 ;;
+  *)   SEED_FAILED="the seed returned HTTP ${SEED_STATUS}"
+       printf '\033[1;31mERROR:\033[0m Seed returned HTTP %s.\n' "$SEED_STATUS" >&2 ;;
 esac
+
+# The summary below claims the demo data is loaded. Only print it if it is. Saying "ready with the demo dataset"
+# over a failed seed is how a broken seed went unnoticed across releases: the warning scrolled past and the
+# success line was the last word. The stack IS up and usable - it just has no demo content - so report that and
+# exit non-zero so a person or a script has to deal with it.
+if [ -n "${SEED_FAILED:-}" ]; then
+  printf '\n\033[1;31m==>\033[0m Primodel is running, but the demo data is NOT loaded - %s.\n\n' "$SEED_FAILED" >&2
+  printf '  Logs:  (cd %s && docker compose %s logs primodel)\n' "$TARGET_DIR" "${COMPOSE_FILES[*]}" >&2
+  printf '  Retry: curl -fsS -X POST http://localhost:%s/api/seed-demo-data\n\n' "$PORT" >&2
+  printf '  Sign in at http://localhost:%s - the platform works, it just has no demo content.\n' "$PORT" >&2
+  exit 1
+fi
 
 # Lake-only endpoints, appended to the summary. Empty in quick mode so the heredoc stays identical.
 if [ "$MODE" = lake ]; then
