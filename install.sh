@@ -192,6 +192,26 @@ if [ "$FRESH_ENV" = 1 ] && [ -d data/postgres ] && [ -n "$(ls -A data/postgres 2
   printf '         or restore the .env that created it (matching POSTGRES_PASSWORD). Not touching your data.\n' >&2
 fi
 
+# The compose file pins `pull_policy: always` so a stale cache can never serve an old build. That is
+# right for the published image and wrong for one you built or side-loaded yourself: compose would try
+# to pull `primodel:local` from a registry and fail. When the image the operator NAMED is already here,
+# drop in an override that skips the pull — which is what makes an offline demo possible.
+#
+# The test is the EXIT CODE. `docker image inspect` prints an empty JSON array on stdout for an image it
+# cannot find, so testing its output instead would be true either way, and a pinned published tag would
+# be marked "already local" and never fetched.
+if [ -n "${PRIMODEL_IMAGE:-}" ] && docker image inspect "$PRIMODEL_IMAGE" >/dev/null 2>&1; then
+  say "Using the local image $PRIMODEL_IMAGE (skipping registry pull)"
+  cat > docker-compose.local.yml <<EOF
+# Written by install.sh: $PRIMODEL_IMAGE is present locally, so do not try to pull it.
+services:
+  primodel:
+    image: $PRIMODEL_IMAGE
+    pull_policy: never
+EOF
+  COMPOSE_FILES+=(-f docker-compose.local.yml)
+fi
+
 if [ "$MODE" = lake ]; then
   say "Starting Primodel and the lake services — first run pulls ~1 GB, please be patient"
 else
