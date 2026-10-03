@@ -3,7 +3,7 @@
 # One Primodel container (UI + REST + GraphQL + OpenAPI) plus its required backing services:
 # Postgres (canonical + metadata store), NATS JetStream (ingestion queue, change events,
 # GraphQL subscriptions), and Caddy (front door — same-origin routing + optional HTTPS).
-# The object store defaults to the local filesystem, so no S3/MinIO is needed to get started.
+# The object store defaults to the local filesystem, so no S3 object store is needed to get started.
 #
 #   cp .env.example .env      # then edit secrets
 #   docker compose up -d      # → http://localhost:8080

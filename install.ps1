@@ -50,7 +50,7 @@ if ($env:PRIMODEL_REPO_RAW -and $env:PRIMODEL_REPO_RAW.StartsWith('file://')) {
 }
 
 # Returns $preferred if nothing holds it, otherwise the next free port above it. A demo that dies
-# because the machine already runs a MinIO on 9001 - and then asks the operator to edit .env and start
+# because the machine already runs something on 9001 - and then asks the operator to edit .env and start
 # over - is a demo that fails in front of an audience. Pick a port that works and say which one.
 function Get-FreePort([int]$preferred, [string]$label) {
   for ($p = $preferred; $p -lt ($preferred + 50); $p++) {
@@ -84,7 +84,7 @@ function Fetch($rel, $dest) {
 
 # -- Which stack? -------------------------------------------------------------
 # quick = Primodel + Postgres + NATS + Caddy.
-# lake  = the above PLUS MinIO + Iceberg REST catalog + ClickHouse, so the demo shows the governed
+# lake  = the above PLUS SeaweedFS (S3 object store) + Iceberg REST catalog + ClickHouse, so the demo shows the governed
 #         lakehouse round-trip (canonical store -> Iceberg silver -> queried back through ClickHouse).
 #
 # Resolution order: -Lake/-Quick argument, then $env:PRIMODEL_MODE, then an interactive prompt, then
@@ -107,7 +107,7 @@ if (-not $mode) {
     Write-Host '  Which demo would you like?'
     Write-Host ''
     Write-Host '    1) Quick start    Primodel + Postgres + NATS. Fastest, smallest download.'
-    Write-Host '    2) Data lakehouse Adds MinIO + Iceberg + ClickHouse, and shows the governed'
+    Write-Host '    2) Data lakehouse Adds SeaweedFS + Iceberg + ClickHouse, and shows the governed'
     Write-Host '                      round-trip: canonical store -> Iceberg -> queried back via ClickHouse.'
     Write-Host '                      Pulls ~1 GB more and takes a few minutes longer to start.'
     Write-Host ''
@@ -121,7 +121,7 @@ if (-not $mode) {
 
 if ($mode -eq 'lake') {
   $ComposeFiles = @('-f', 'docker-compose.yml', '-f', 'docker-compose.lake.yml')
-  Say 'Installing the data-lakehouse demo (Primodel + Postgres + NATS + MinIO + Iceberg + ClickHouse)'
+  Say 'Installing the data-lakehouse demo (Primodel + Postgres + NATS + SeaweedFS + Iceberg + ClickHouse)'
 } else {
   $ComposeFiles = @('-f', 'docker-compose.yml')
   Say 'Installing the quick-start demo (Primodel + Postgres + NATS)'
@@ -146,9 +146,11 @@ Fetch 'softhsm/Dockerfile' 'softhsm/Dockerfile'
 Fetch 'softhsm/entrypoint.sh' 'softhsm/entrypoint.sh'
 
 if ($mode -eq 'lake') {
-  Say 'Downloading data-lakehouse overlay (MinIO + Iceberg REST + ClickHouse)'
+  Say 'Downloading data-lakehouse overlay (SeaweedFS + Iceberg REST + ClickHouse)'
   Fetch 'docker-compose.lake.yml' 'docker-compose.lake.yml'
-  # ClickHouse reads the MinIO credentials for the iceberg() table function from this named collection,
+  # The object store's S3 credentials; it refuses every request without them.
+  Fetch 'seaweedfs/s3.json' 'seaweedfs/s3.json'
+  # ClickHouse reads the object-store credentials for the iceberg() table function from this named collection,
   # so the query-back cannot work without it.
   Fetch 'clickhouse-config/named-collections.xml' 'clickhouse-config/named-collections.xml'
 }
@@ -180,14 +182,14 @@ if (Test-Path '.env') {
   # Ports are written into .env so a clash is fixed by editing one file rather than hunting through
   # compose. Overridable up front for machines that already run something on 8080/9001.
   $studioPort = if ($env:PRIMODEL_PORT) { $env:PRIMODEL_PORT } else { Get-FreePort 8080 'Studio' }
-  $minioPort  = if ($env:MINIO_CONSOLE_PORT) { $env:MINIO_CONSOLE_PORT } else { Get-FreePort 9001 'MinIO console' }
+  $objectStorePort = if ($env:OBJECT_STORE_CONSOLE_PORT) { $env:OBJECT_STORE_CONSOLE_PORT } else { Get-FreePort 9001 'object-store console' }
   $chPort     = if ($env:CLICKHOUSE_HTTP_PORT) { $env:CLICKHOUSE_HTTP_PORT } else { Get-FreePort 8123 'ClickHouse' }
   $enc     = New-Secret 48
   $adminPw = New-Password 16
   $pgPw    = New-Password 16
   @"
 PRIMODEL_PORT=$studioPort
-MINIO_CONSOLE_PORT=$minioPort
+OBJECT_STORE_CONSOLE_PORT=$objectStorePort
 CLICKHOUSE_HTTP_PORT=$chPort
 PRIMODEL_IMAGE=$img
 PRIMODEL_ENCRYPTION_KEY=$enc
@@ -249,16 +251,16 @@ docker compose @ComposeFiles up -d
 if ($LASTEXITCODE -ne 0) {
   Write-Host ''
   Write-Host 'Hint: if a port is already allocated, another service on this machine holds it. Override in' -ForegroundColor Yellow
-  Write-Host "      .\$TargetDir\.env - PRIMODEL_PORT (Studio, 8080) or MINIO_CONSOLE_PORT (9001) - and re-run." -ForegroundColor Yellow
+  Write-Host "      .\$TargetDir\.env - PRIMODEL_PORT (Studio, 8080) or OBJECT_STORE_CONSOLE_PORT (9001) - and re-run." -ForegroundColor Yellow
   Die 'docker compose could not start the stack (see the error above).'
 }
 
 $port    = (Select-String -Path '.env' -Pattern '^PRIMODEL_PORT=(.*)$').Matches.Groups[1].Value
 # Read back rather than reuse the variable: an EXISTING .env is reused as-is, so its ports - not this
-# run's defaults - are the ones actually published. Printing 9001 while MinIO listens on 9101 sends the
+# run's defaults - are the ones actually published. Printing 9001 while the console listens on 9101 sends the
 # viewer of a demo to a dead link.
-$minioConsole = (Select-String -Path '.env' -Pattern '^MINIO_CONSOLE_PORT=(.*)$').Matches.Groups[1].Value
-if (-not $minioConsole) { $minioConsole = '9001' }
+$objectStoreConsole = (Select-String -Path '.env' -Pattern '^OBJECT_STORE_CONSOLE_PORT=(.*)$').Matches.Groups[1].Value
+if (-not $objectStoreConsole) { $objectStoreConsole = '9001' }
 $chHttp = (Select-String -Path '.env' -Pattern '^CLICKHOUSE_HTTP_PORT=(.*)$').Matches.Groups[1].Value
 if (-not $chHttp) { $chHttp = '8123' }
 $adminPw = (Select-String -Path '.env' -Pattern '^PRIMODEL_BOOTSTRAP_PASSWORD=(.*)$').Matches.Groups[1].Value
@@ -306,7 +308,7 @@ try {
 
 if ($seedStatus -eq 200 -or $seedStatus -eq 202) {
   # 300 polls x 2 s = 10 minutes. Generous on purpose: on a cold machine the lake seed also writes
-  # Iceberg metadata to MinIO, and giving up early would report failure on a seed that is fine.
+  # Iceberg metadata to the object store, and giving up early would report failure on a seed that is fine.
   $seedWait  = 300
   $seedFinal = ''
   while ($seedWait -gt 0 -and $seedFinal -notin @('Seeded', 'Failed', 'SystemNotEmpty')) {
@@ -378,13 +380,13 @@ Write-Host "  Reset:    cd $TargetDir; docker compose $ComposeArgs down; Remove-
 if ($mode -eq 'lake') {
   Write-Host ''
   Write-Host '  Lake services:'
-  Write-Host "    MinIO console   http://localhost:$minioConsole  (minioadmin / minioadmin)"
+  Write-Host "    Object store    http://localhost:$objectStoreConsole  (SeaweedFS filer: browse primodel-lake)"
   Write-Host "    ClickHouse      http://localhost:$chHttp/play"
   # The Iceberg REST catalog is deliberately NOT published to the host - it is reached over the compose
   # network by Primodel and ClickHouse. Printing a localhost URL for it sent people to a dead link.
   Write-Host '    Iceberg REST    internal only - docker compose exec clickhouse curl http://iceberg-rest:8181/v1/namespaces/primodel/tables'
   Write-Host ''
-  Write-Host '  The seed replicates the golden Person entity into Iceberg silver on MinIO. Query it back'
+  Write-Host '  The seed replicates the golden Person entity into Iceberg silver in the object store. Query it back'
   Write-Host "  from ClickHouse at http://localhost:$chHttp/play :"
   Write-Host "    SELECT * FROM iceberg(primodel_lake, filename='silver/hr/person') LIMIT 5"
 }

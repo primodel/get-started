@@ -1,0 +1,11 @@
+{
+  "identities": [
+    {
+      "name": "primodel",
+      "credentials": [
+        { "accessKey": "primodel", "secretKey": "primodel-lake-demo" }
+      ],
+      "actions": ["Admin", "Read", "Write", "List", "Tagging"]
+    }
+  ]
+}

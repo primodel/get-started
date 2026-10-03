@@ -25,7 +25,7 @@ rand() {
 
 # ── Which stack? ─────────────────────────────────────────────────────────────
 # quick = Primodel + Postgres + NATS + Caddy.
-# lake  = the above PLUS MinIO + Iceberg REST catalog + ClickHouse, so the demo shows the governed
+# lake  = the above PLUS SeaweedFS (S3 object store) + Iceberg REST catalog + ClickHouse, so the demo shows the governed
 #         lakehouse round-trip (canonical store -> Iceberg silver -> queried back through ClickHouse).
 #
 # Resolution order: flag, then PRIMODEL_MODE, then an interactive prompt, then quick. The prompt reads
@@ -45,7 +45,7 @@ Primodel quickstart.
   install.sh [--quick|--lake]
 
   --quick   Primodel + Postgres + NATS (default)
-  --lake    also MinIO + Iceberg REST catalog + ClickHouse (governed lakehouse demo)
+  --lake    also SeaweedFS + Iceberg REST catalog + ClickHouse (governed lakehouse demo)
 
 Non-interactive: set PRIMODEL_MODE=quick|lake. With no flag, no PRIMODEL_MODE and no
 terminal to prompt on, --quick is used.
@@ -64,7 +64,7 @@ if [ -z "$MODE" ]; then
 '
     printf '    1) Quick start    Primodel + Postgres + NATS. Fastest, smallest download.
 '
-    printf '    2) Data lakehouse Adds MinIO + Iceberg + ClickHouse, and shows the governed
+    printf '    2) Data lakehouse Adds SeaweedFS + Iceberg + ClickHouse, and shows the governed
 '
     printf '                      round-trip: canonical store -> Iceberg -> queried back via ClickHouse.
 '
@@ -86,7 +86,7 @@ fi
 
 if [ "$MODE" = lake ]; then
   COMPOSE_FILES=(-f docker-compose.yml -f docker-compose.lake.yml)
-  say "Installing the data-lakehouse demo (Primodel + Postgres + NATS + MinIO + Iceberg + ClickHouse)"
+  say "Installing the data-lakehouse demo (Primodel + Postgres + NATS + SeaweedFS + Iceberg + ClickHouse)"
 else
   COMPOSE_FILES=(-f docker-compose.yml)
   say "Installing the quick-start demo (Primodel + Postgres + NATS)"
@@ -97,7 +97,7 @@ fi
 dc() { docker compose "${COMPOSE_FILES[@]}" "$@"; }
 
 # Echoes $1 if nothing holds it, otherwise the next free port above it. A demo that dies because the
-# machine already runs a MinIO on 9001 - and then asks the operator to edit .env and start over - is a
+# machine already runs something on 9001 - and then asks the operator to edit .env and start over - is a
 # demo that fails in front of an audience. Pick a port that works and say which one.
 free_port() {
   preferred="$1"; label="$2"; p="$preferred"; limit=$((preferred + 50))
@@ -131,10 +131,13 @@ curl -fsSL "$REPO_RAW/softhsm/Dockerfile"   -o softhsm/Dockerfile
 curl -fsSL "$REPO_RAW/softhsm/entrypoint.sh" -o softhsm/entrypoint.sh
 
 if [ "$MODE" = lake ]; then
-  say "Downloading data-lakehouse overlay (MinIO + Iceberg REST + ClickHouse)"
+  say "Downloading data-lakehouse overlay (SeaweedFS + Iceberg REST + ClickHouse)"
   curl -fsSL "$REPO_RAW/docker-compose.lake.yml" -o docker-compose.lake.yml
+  # The object store's S3 credentials; it refuses every request without them.
+  mkdir -p seaweedfs
+  curl -fsSL "$REPO_RAW/seaweedfs/s3.json" -o seaweedfs/s3.json
   mkdir -p clickhouse-config
-  # ClickHouse reads the MinIO credentials for the iceberg() table function from this named collection,
+  # ClickHouse reads the object-store credentials for the iceberg() table function from this named collection,
   # so the query-back cannot work without it.
   curl -fsSL "$REPO_RAW/clickhouse-config/named-collections.xml" -o clickhouse-config/named-collections.xml
 fi
@@ -164,13 +167,13 @@ else
   FRESH_ENV=1
   say "Generating .env with fresh secrets"
   PRIMODEL_PORT="${PRIMODEL_PORT:-$(free_port 8080 'Studio')}"
-  MINIO_CONSOLE_PORT="${MINIO_CONSOLE_PORT:-$(free_port 9001 'MinIO console')}"
+  OBJECT_STORE_CONSOLE_PORT="${OBJECT_STORE_CONSOLE_PORT:-$(free_port 9001 'object-store console')}"
   CLICKHOUSE_HTTP_PORT="${CLICKHOUSE_HTTP_PORT:-$(free_port 8123 'ClickHouse')}"
   ENC_KEY="$(rand 48)"
   ADMIN_PW="$(rand 12 | tr -d '/+=' | cut -c1-16)"
   cat > .env <<EOF
 PRIMODEL_PORT=${PRIMODEL_PORT}
-MINIO_CONSOLE_PORT=${MINIO_CONSOLE_PORT}
+OBJECT_STORE_CONSOLE_PORT=${OBJECT_STORE_CONSOLE_PORT}
 CLICKHOUSE_HTTP_PORT=${CLICKHOUSE_HTTP_PORT}
 PRIMODEL_IMAGE=${PRIMODEL_IMAGE:-ghcr.io/primodel/primodel:latest}
 PRIMODEL_ENCRYPTION_KEY=${ENC_KEY}
@@ -220,7 +223,7 @@ fi
 if ! dc up -d; then
   printf '[1;33mHint:[0m if a port is already allocated, another service on this machine holds it.
 ' >&2
-  printf '      Override PRIMODEL_PORT (Studio, 8080) or MINIO_CONSOLE_PORT (9001) in ./%s/.env and re-run.
+  printf '      Override PRIMODEL_PORT (Studio, 8080) or OBJECT_STORE_CONSOLE_PORT (9001) in ./%s/.env and re-run.
 ' "$TARGET_DIR" >&2
   die "docker compose could not start the stack (see the error above)."
 fi
@@ -229,9 +232,9 @@ PORT="$(grep -E '^PRIMODEL_PORT=' .env | cut -d= -f2)"
 ADMIN_PW="$(grep -E '^PRIMODEL_BOOTSTRAP_PASSWORD=' .env | cut -d= -f2)"
 PORT="${PORT:-8080}"
 # Read back rather than reuse this run's default: an EXISTING .env is reused as-is, so ITS ports are the
-# ones actually published. Printing 9001 while MinIO listens on 9101 sends a demo viewer to a dead link.
-MINIO_CONSOLE="$(grep -E '^MINIO_CONSOLE_PORT=' .env | cut -d= -f2)"
-MINIO_CONSOLE="${MINIO_CONSOLE:-9001}"
+# ones actually published. Printing 9001 while the console listens on 9101 sends a demo viewer to a dead link.
+OBJECT_STORE_CONSOLE="$(grep -E '^OBJECT_STORE_CONSOLE_PORT=' .env | cut -d= -f2)"
+OBJECT_STORE_CONSOLE="${OBJECT_STORE_CONSOLE:-9001}"
 CH_HTTP="$(grep -E '^CLICKHOUSE_HTTP_PORT=' .env | cut -d= -f2)"
 CH_HTTP="${CH_HTTP:-8123}"
 
@@ -281,7 +284,7 @@ seed_state() {
 case "$SEED_STATUS" in
   200|202)
     # 300 polls x 2 s = 10 minutes. Generous on purpose: on a cold machine the lake seed also writes
-    # Iceberg metadata to MinIO, and giving up early would report failure on a seed that is fine.
+    # Iceberg metadata to the object store, and giving up early would report failure on a seed that is fine.
     SEED_WAIT=300
     SEED_FINAL=""
     while [ "$SEED_WAIT" -gt 0 ]; do
@@ -324,11 +327,11 @@ fi
 if [ "$MODE" = lake ]; then
   LAKE_HELP="
   Lake services:
-    MinIO console   http://localhost:${MINIO_CONSOLE}  (minioadmin / minioadmin)
+    Object store    http://localhost:${OBJECT_STORE_CONSOLE}  (SeaweedFS filer: browse primodel-lake)
     ClickHouse      http://localhost:${CH_HTTP}/play
     Iceberg REST    internal only — docker compose exec clickhouse curl http://iceberg-rest:8181/v1/namespaces/primodel/tables
 
-  The seed replicates the golden Person entity into Iceberg silver on MinIO. Query it back:
+  The seed replicates the golden Person entity into Iceberg silver in the object store. Query it back:
     curl 'http://localhost:${CH_HTTP}/?query=SELECT+*+FROM+iceberg(primodel_lake,filename=%27silver/hr/person%27)+LIMIT+5'
 "
 else
