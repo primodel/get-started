@@ -109,8 +109,12 @@ services:
   # No auth (default ClickHouse listen on 8123 with user `default`, no password).
   # HTTP port (8123) is published to the host so you can run queries manually with:
   #   curl 'http://localhost:8123/?query=SELECT%20*%20FROM%20iceberg(...)'
+  #
+  # Pinned to 26.8 (not 25.8): 25.8's Iceberg reader cannot reliably apply equality deletes on this
+  # table layout, so an updated row's earlier versions stay visible and aggregates over the lake double-count.
+  # 26.8 reads the current row only. Verified directly against both versions before changing this pin.
   clickhouse:
-    image: clickhouse/clickhouse-server:25.8
+    image: clickhouse/clickhouse-server:26.8
     depends_on:
       iceberg-rest:
         condition: service_healthy
