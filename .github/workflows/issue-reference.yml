@@ -1,0 +1,48 @@
+# Required check: the pull request description must reference at least one issue, so a closed issue
+# always traces back to the PR that delivered it (owner requirement). A merged PR in this repository
+# once delivered an issue without referencing it, so the issue stayed open after the work landed.
+#
+# This repository is exempt from the full PR checklist the other three repositories carry, so this is a
+# minimal, standalone check for just that one rule — see .github/scripts/check-issue-reference.sh for
+# what counts as a reference and why a list on one line is rejected.
+#
+# Issues for this project are tracked upstream, not in this repository, so a bare #n is rejected; write
+# the full owner/repo#n form. Verifying a cross-repo reference needs read access to that upstream
+# repository's issues, which the default GITHUB_TOKEN does not have — see PRIMODEL_ISSUES_PAT below.
+#
+# Re-runs when the description is edited. PRs opened by Dependabot or by release automation are exempt
+# by exact author login (github-actions[bot], dependabot[bot]), never by a marker in the body.
+name: Issue reference
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  issue-reference:
+    name: Issue reference
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: The issue-reference check still rejects what it should
+        run: bash .github/scripts/check-issue-reference.sh --self-test
+
+      - name: Description references an issue
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          OWN_REPO: ${{ github.repository }}
+          ISSUES_REPO: "Wadman-IT/Primodel"
+          ALLOW_BARE_HASH: "false"
+          # PRIMODEL_ISSUES_PAT does not exist yet (checked via `gh secret list`): a fine-grained PAT,
+          # Issues: Read-only, scoped to the upstream issue tracker, needs to be added as a secret here
+          # before this lookup can succeed on a real cross-repo reference. Until then it falls back to
+          # this repo's own token, which cannot read a different private repository's issues, so the
+          # check fails closed (every reference reported as nonexistent) rather than silently not
+          # checking.
+          GH_TOKEN: ${{ secrets.PRIMODEL_ISSUES_PAT || github.token }}
+        run: bash .github/scripts/check-issue-reference.sh
