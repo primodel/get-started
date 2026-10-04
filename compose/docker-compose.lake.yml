@@ -1,8 +1,8 @@
 # Primodel — data-lake opt-in overlay (TASK-543).
 #
 # Extends the base docker-compose.yml with the governed data-lake stack:
-#   MinIO        — S3-compatible object store (bronze raw bytes + Iceberg data files)
-#   Iceberg REST — tabulario/iceberg-rest catalog (tracks table metadata; backed by MinIO)
+#   SeaweedFS    — S3-compatible object store (bronze raw bytes + Iceberg data files)
+#   Iceberg REST — tabulario/iceberg-rest catalog (tracks table metadata; backed by the object store)
 #   ClickHouse   — query-back engine (reads Iceberg silver tables via the iceberg() table function)
 #
 # USAGE:
@@ -10,61 +10,63 @@
 #
 # The base `docker compose up -d` (without this file) is completely unchanged — the lake is OFF by default.
 #
-# All lake services share the `lake` Docker network with the primodel container.  MinIO data is
-# bind-mounted under ./data/minio so it survives compose restarts.
+# All lake services share the `lake` Docker network with the primodel container.  Object-store data is
+# bind-mounted under ./data/object-store so it survives compose restarts.
 #
 # TEARDOWN:
 #   docker compose -f docker-compose.yml -f docker-compose.lake.yml down
-#   rm -rf ./data/minio ./data/clickhouse   # drops all lake data
+#   rm -rf ./data/object-store ./data/clickhouse   # drops all lake data
 
 name: primodel
 
 services:
 
-  # ── MinIO: S3-compatible lake storage ─────────────────────────────────────────────────────────────
+  # ── Object store: S3-compatible lake storage (SeaweedFS) ───────────────────────────────────────────
   # Hosts the bronze layer (raw ingest bytes) and the Iceberg data/metadata files (silver layer).
-  # The API port (9000) is used by the Iceberg REST catalog and ClickHouse.
-  # The console port (9001) is published to the host for manual inspection.
-  minio:
-    image: minio/minio:latest
-    command: server /data --console-address ":9001"
-    environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
+  # One process runs SeaweedFS's master, volume, filer and S3 gateway. The S3 API listens on 9000 (internal
+  # only: Iceberg REST, ClickHouse and Primodel); the filer's web UI is published for browsing the bucket.
+  # Credentials come from seaweedfs/s3.json.
+  object-store:
+    image: chrislusf/seaweedfs:4.48
+    command: >
+      server -dir=/data -ip=object-store -ip.bind=0.0.0.0
+      -volume.max=0 -master.volumeSizeLimitMB=1024
+      -s3 -s3.port=9000 -s3.config=/etc/seaweedfs/s3.json
     volumes:
-      - ./data/minio:/data
+      - ./data/object-store:/data
+      - ./seaweedfs/s3.json:/etc/seaweedfs/s3.json:ro
     ports:
-      # Console host port is parameterized so a host already running another MinIO on 9001 can remap it
-      # (set MINIO_CONSOLE_PORT in .env). Default keeps the documented http://localhost:9001.
-      - "${MINIO_CONSOLE_PORT:-9001}:9001"   # MinIO console (user: minioadmin / minioadmin)
+      # Filer web UI (browse buckets and objects). Remap with OBJECT_STORE_CONSOLE_PORT in .env.
+      - "${OBJECT_STORE_CONSOLE_PORT:-9001}:8888"
     expose:
-      - "9000"        # S3 API — internal only (Iceberg REST + ClickHouse + Primodel)
+      - "9000"        # S3 API — internal only
     healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9333/cluster/status >/dev/null && wget -qO- http://localhost:8888/ >/dev/null"]
       interval: 5s
       timeout: 3s
-      retries: 20
+      retries: 30
       start_period: 10s
     restart: unless-stopped
 
-  # ── MinIO bucket initialiser (one-shot) ────────────────────────────────────────────────────────────
-  # Creates the `primodel-lake` bucket on first start.  Exits immediately after.
-  minio-init:
-    image: minio/mc:latest
+  # ── Bucket initialiser (one-shot) ──────────────────────────────────────────────────────────────────
+  # Creates the `primodel-lake` bucket on first start, then exits. Re-running is harmless: an existing
+  # bucket is reported and left alone, and the final listing must show it either way.
+  object-store-init:
+    image: chrislusf/seaweedfs:4.48
     depends_on:
-      minio:
+      object-store:
         condition: service_healthy
     entrypoint: >
       /bin/sh -c "
-        mc alias set local http://minio:9000 minioadmin minioadmin &&
-        mc mb --ignore-existing local/primodel-lake &&
+        echo 's3.bucket.create -name primodel-lake' | weed shell -master=object-store:9333 ;
+        echo 's3.bucket.list' | weed shell -master=object-store:9333 | grep -q primodel-lake &&
         echo 'Bucket primodel-lake ready.'
       "
     restart: "no"
 
   # ── Iceberg REST catalog ────────────────────────────────────────────────────────────────────────────
   # tabulario/iceberg-rest: a lightweight Java server that implements the Iceberg REST catalog spec
-  # (Apache Iceberg spec §10). It stores table metadata on MinIO (via S3 API) and exposes the catalog
+  # (Apache Iceberg spec §10). It stores table metadata in the object store (via S3 API) and exposes the catalog
   # on port 8181. No external database; no auth required for local eval.
   #
   # CATALOG_WAREHOUSE is the S3 path under which the catalog stores table metadata.
@@ -72,7 +74,7 @@ services:
   iceberg-rest:
     image: tabulario/iceberg-rest:1.6.0
     depends_on:
-      minio-init:
+      object-store-init:
         condition: service_completed_successfully
     environment:
       CATALOG_CATALOG__IMPL: org.apache.iceberg.jdbc.JdbcCatalog
@@ -82,10 +84,10 @@ services:
       CATALOG_URI: jdbc:sqlite:file:/tmp/catalog.db?journal_mode=WAL&busy_timeout=10000
       CATALOG_WAREHOUSE: s3://primodel-lake/warehouse
       CATALOG_IO__IMPL: org.apache.iceberg.aws.s3.S3FileIO
-      CATALOG_S3_ENDPOINT: http://minio:9000
+      CATALOG_S3_ENDPOINT: http://object-store:9000
       CATALOG_S3_PATH__STYLE__ACCESS: "true"
-      AWS_ACCESS_KEY_ID: minioadmin
-      AWS_SECRET_ACCESS_KEY: minioadmin
+      AWS_ACCESS_KEY_ID: primodel
+      AWS_SECRET_ACCESS_KEY: primodel-lake-demo
       AWS_REGION: us-east-1
     expose:
       - "8181"        # REST catalog API — internal only
@@ -100,9 +102,9 @@ services:
     restart: unless-stopped
 
   # ── ClickHouse: lake query-back engine ─────────────────────────────────────────────────────────────
-  # ClickHouse reads Iceberg silver tables from MinIO via its native `iceberg()` table function
+  # ClickHouse reads Iceberg silver tables from the object store via its native `iceberg()` table function
   # (the shipped TASK-544 source adapter in Primodel).  It speaks directly to the Iceberg REST catalog
-  # to discover table locations, then reads Parquet data files from MinIO over S3.
+  # to discover table locations, then reads Parquet data files from the object store over S3.
   #
   # No auth (default ClickHouse listen on 8123 with user `default`, no password).
   # HTTP port (8123) is published to the host so you can run queries manually with:
@@ -113,7 +115,7 @@ services:
       iceberg-rest:
         condition: service_healthy
     environment:
-      # Allow ClickHouse to resolve MinIO and the Iceberg REST catalog by service name.
+      # Allow ClickHouse to resolve the object store and the Iceberg REST catalog by service name.
       CLICKHOUSE_ALLOW_PLAINTEXT_ERROR_LOG: "1"
       # Keep the built-in passwordless `default` user reachable OVER THE NETWORK. Recent CH images'
       # entrypoint otherwise "disables network access for user default" when no USER/PASSWORD is set,
@@ -123,11 +125,11 @@ services:
       - ./data/clickhouse:/var/lib/clickhouse
       - ./clickhouse-config/named-collections.xml:/etc/clickhouse-server/config.d/named-collections.xml:ro
     ports:
-      # Host port is parameterized like MinIO's console so a machine already running something on 8123
+      # Host port is parameterized like the object-store console so a machine already running something on 8123
       # can remap it without editing this file (the installer picks a free port automatically).
       - "${CLICKHOUSE_HTTP_PORT:-8123}:8123"   # HTTP interface → http://localhost:8123
     expose:
-      - "9000"        # Native TCP (internal; avoid clash with MinIO on the same name — use port 9000 on host)
+      - "9000"        # Native TCP (internal only)
     healthcheck:
       # The CH server image ships no curl/wget; use the bundled clickhouse-client for the readiness probe.
       test: ["CMD-SHELL", "clickhouse-client --query 'SELECT 1' >/dev/null || exit 1"]
@@ -142,7 +144,7 @@ services:
   # All other primodel config comes from docker-compose.yml.
   primodel:
     depends_on:
-      minio-init:
+      object-store-init:
         condition: service_completed_successfully
       iceberg-rest:
         condition: service_healthy
@@ -151,11 +153,11 @@ services:
     environment:
       # Opt-in lake seed flag: triggers the lake wiring in the demo seed (TASK-543).
       PRIMODEL_DEMO_LAKE: "true"
-      # Lake storage: MinIO S3 endpoint + bucket.
-      Primodel__DemoSeed__Lake__S3Endpoint: "http://minio:9000"
+      # Lake storage: S3 endpoint + bucket.
+      Primodel__DemoSeed__Lake__S3Endpoint: "http://object-store:9000"
       Primodel__DemoSeed__Lake__S3Bucket: "primodel-lake"
-      Primodel__DemoSeed__Lake__S3AccessKey: "minioadmin"
-      Primodel__DemoSeed__Lake__S3SecretKey: "minioadmin"
+      Primodel__DemoSeed__Lake__S3AccessKey: "primodel"
+      Primodel__DemoSeed__Lake__S3SecretKey: "primodel-lake-demo"
       # Iceberg REST catalog URI + namespace.
       Primodel__DemoSeed__Lake__CatalogUri: "http://iceberg-rest:8181"
       Primodel__DemoSeed__Lake__CatalogNamespace: "primodel"

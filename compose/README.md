@@ -15,7 +15,7 @@ Runs Primodel and its required backing services on your machine with one command
 | `http-demo` | `nginx:alpine` | [DEMO ONLY] Serves demo source data files (JSON/XML/CSV) to the seeded pipelines |
 | `softhsm-init` | built from `softhsm/` | One-shot: initializes the SoftHSM PKCS#11 token used as the KEK backend, then exits |
 
-The object store defaults to the **local filesystem**, so no S3/MinIO is needed to get started. All
+The object store defaults to the **local filesystem**, so no S3 object store is needed to get started. All
 persistent state is **bind-mounted under `./data`** next to the compose file — no Docker named volumes.
 That keeps each install directory self-contained: a fresh directory is a fresh install, and deleting
 `./data` removes all data.
@@ -130,13 +130,13 @@ production deployments that resolve credentials from a secret store instead of p
 | `PRIMODEL_METADATA_SECRET_REF` | Resolves the metadata DB credential from AWS Secrets Manager / Azure Key Vault / a Kubernetes Secret at boot, replacing `PRIMODEL_DATABASE_URL` |
 | `PRIMODEL_KEK` | The KEK pointer (see above) — `awskms:`/`azurekv:`/`gcpkms:`/`pkcs11:` all resolve against a real key store rather than this local SoftHSM sidecar |
 
-### Using S3 / MinIO instead of the filesystem store
+### Using S3 instead of the filesystem store
 
-Set these on the `primodel` service (and add a MinIO service, or point at any S3-compatible endpoint):
+Set these on the `primodel` service (and add an S3-compatible service such as the lake overlay's `object-store`, or point at any S3-compatible endpoint):
 
 ```yaml
 ObjectStore__UseFileSystem: "false"
-ObjectStore__ServiceUrl: "http://minio:9000"
+ObjectStore__ServiceUrl: "http://object-store:9000"
 ObjectStore__Bucket: "primodel-ingestion"
 ObjectStore__AccessKey: "..."
 ObjectStore__SecretKey: "..."

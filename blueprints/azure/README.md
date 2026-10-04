@@ -7,7 +7,7 @@ outputs the values to deploy the workload with the [Helm chart](../../helm/primo
 
 NATS runs inside the cluster (bundled by the chart). **Object storage**: Azure Blob is *not*
 S3-compatible, so the default is a **filesystem PVC** (an Azure Disk via the chart). For S3 semantics,
-run **MinIO** in the cluster and set `config.storage: s3` with its endpoint.
+run an S3-compatible store such as **SeaweedFS** in the cluster and set `config.storage: s3` with its endpoint.
 
 ## Prerequisites (bring your own)
 
