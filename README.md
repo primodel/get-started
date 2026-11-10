@@ -111,7 +111,7 @@ This adds three services to the running stack:
 | Service | What |
 | --- | --- |
 | **SeaweedFS** | S3-compatible object store. Hosts both the bronze raw bytes and the Iceberg data/metadata files. Browse the bucket in its filer UI at <http://localhost:9001>. |
-| **iceberg-rest** | [tabulario/iceberg-rest](https://github.com/tabular-io/iceberg-rest-image) — the Iceberg REST catalog server. Tracks table metadata in the object store; the Primodel replication engine writes silver Iceberg tables here. |
+| **iceberg-rest** | [tabulario/iceberg-rest](https://github.com/tabular-io/iceberg-rest-image) — the Iceberg REST catalog server. Tracks table metadata (backed by its own `iceberg_catalog` database on the stack's `postgres` service) for the Iceberg data files the Primodel replication engine writes to the object store. |
 | **ClickHouse** | Query-back engine. Reads Iceberg silver tables from the object store via its native `iceberg()` table function. HTTP interface at <http://localhost:8123>. |
 
 The `PRIMODEL_DEMO_LAKE=true` flag passed to the Primodel container activates the opt-in lake seed on the next `POST /api/seed-demo-data` call (or a fresh install): it registers the object-store connection + REST catalog config as the sysadmin lake config, flips the `Person` entity's lake-participation flag, and seeds a disabled "Iceberg → Person (lake query-back)" pipeline ready to be enabled.
@@ -144,7 +144,9 @@ docker compose -f docker-compose.yml -f docker-compose.lake.yml down
 rm -rf compose/data/object-store compose/data/clickhouse
 ```
 
-Removing the lake data drops all Iceberg metadata and bronze objects. The canonical Postgres data (under `compose/data/postgres`) is unaffected.
+Removing the lake data drops all bronze objects and Iceberg data files. The Iceberg catalog's own table metadata lives in the `iceberg_catalog` database, alongside the canonical Postgres data under `compose/data/postgres`, and is unaffected by the above — drop it separately with `docker compose exec postgres psql -U postgres -c 'DROP DATABASE iceberg_catalog'` for a fully clean catalog.
+
+**Upgrading an existing install:** earlier releases backed the Iceberg catalog with SQLite in the `iceberg-rest` container's own `/tmp`, which was already lost on every container recreate — so there is no catalog state to carry over. Just start the lake overlay as usual; a one-shot init step creates the `iceberg_catalog` database on your existing `postgres` service, and Primodel re-registers each silver Iceberg table the next time it writes to it.
 
 ## Documentation
 

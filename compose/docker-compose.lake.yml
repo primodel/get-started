@@ -2,7 +2,7 @@
 #
 # Extends the base docker-compose.yml with the governed data-lake stack:
 #   SeaweedFS    — S3-compatible object store (bronze raw bytes + Iceberg data files)
-#   Iceberg REST — tabulario/iceberg-rest catalog (tracks table metadata; backed by the object store)
+#   Iceberg REST — tabulario/iceberg-rest catalog (tracks table metadata; backed by Postgres)
 #   ClickHouse   — query-back engine (reads Iceberg silver tables via the iceberg() table function)
 #
 # USAGE:
@@ -11,11 +11,22 @@
 # The base `docker compose up -d` (without this file) is completely unchanged — the lake is OFF by default.
 #
 # All lake services share the `lake` Docker network with the primodel container.  Object-store data is
-# bind-mounted under ./data/object-store so it survives compose restarts.
+# bind-mounted under ./data/object-store so it survives compose restarts. The Iceberg catalog's own
+# table metadata lives in the `iceberg_catalog` database on the stack's shared `postgres` service
+# (bind-mounted under ./data/postgres), so it survives restarts and container recreates too.
+#
+# UPGRADING an existing install to this release: the catalog used to live in SQLite under /tmp inside
+# the iceberg-rest container, which was already lost on every recreate — so there is no catalog state to
+# migrate. Just bring the lake overlay up as usual; `postgres-catalog-init` creates the `iceberg_catalog`
+# database on the existing `postgres` service, and Primodel re-registers each silver Iceberg table from
+# scratch the next time it writes to it (the normal "table doesn't exist in the catalog yet" path).
 #
 # TEARDOWN:
 #   docker compose -f docker-compose.yml -f docker-compose.lake.yml down
 #   rm -rf ./data/object-store ./data/clickhouse   # drops all lake data
+#   # The iceberg_catalog database lives in ./data/postgres (shared with the canonical store) and is
+#   # NOT removed by the above — drop it manually if you want a completely clean lake catalog:
+#   #   docker compose exec postgres psql -U postgres -c 'DROP DATABASE iceberg_catalog'
 
 name: primodel
 
@@ -64,24 +75,53 @@ services:
       "
     restart: "no"
 
+  # ── Iceberg catalog DB initialiser (one-shot, idempotent) ──────────────────────────────────────────
+  # Creates the iceberg_catalog database on the shared `postgres` service if it doesn't already exist.
+  # postgres-init/*.sql scripts only run on a FRESH data directory (Postgres skips initdb.d once
+  # ./data/postgres already holds a cluster), so an install that already exists and is enabling the
+  # lake overlay for the first time needs this step to create the database. Re-running is harmless:
+  # an existing database is reported and left alone.
+  postgres-catalog-init:
+    image: postgres:18
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGHOST: postgres
+      PGUSER: ${POSTGRES_USER:-postgres}
+      PGPASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    entrypoint: >
+      bash -c "
+        psql -d postgres -tc \"SELECT 1 FROM pg_database WHERE datname = 'iceberg_catalog'\" | grep -q 1 ||
+        psql -d postgres -c 'CREATE DATABASE iceberg_catalog'
+      "
+    restart: "no"
+
   # ── Iceberg REST catalog ────────────────────────────────────────────────────────────────────────────
   # tabulario/iceberg-rest: a lightweight Java server that implements the Iceberg REST catalog spec
   # (Apache Iceberg spec §10). It stores table metadata in the object store (via S3 API) and exposes the catalog
-  # on port 8181. No external database; no auth required for local eval.
+  # on port 8181. No auth required for local eval.
   #
   # CATALOG_WAREHOUSE is the S3 path under which the catalog stores table metadata.
   # The Primodel replication engine writes silver Iceberg tables here via the REST catalog API.
+  #
+  # Backed by the stack's own `postgres` service, in its own `iceberg_catalog` database — not SQLite.
+  # SQLite serialises every writer on ONE file lock, which under concurrent silver-table commits produced
+  # ambiguous commits and orphaned metadata files, and `/tmp` (where the SQLite file lived) does not survive
+  # a container recreate, so the catalog forgot every table it had tracked. Postgres backs this with the
+  # stack's durable, bind-mounted volume and supports real concurrent writers.
   iceberg-rest:
     image: tabulario/iceberg-rest:1.6.0
     depends_on:
       object-store-init:
         condition: service_completed_successfully
+      postgres-catalog-init:
+        condition: service_completed_successfully
     environment:
       CATALOG_CATALOG__IMPL: org.apache.iceberg.jdbc.JdbcCatalog
-      # WAL + a busy timeout: the catalog's default SQLite backend serialises writers, and two entities
-      # committing at once made it answer 500 "database is locked" rather than waiting its turn. WAL lets a
-      # reader and a writer overlap; the timeout makes a contending writer wait instead of failing at once.
-      CATALOG_URI: jdbc:sqlite:file:/tmp/catalog.db?journal_mode=WAL&busy_timeout=10000
+      CATALOG_URI: jdbc:postgresql://postgres:5432/iceberg_catalog
+      CATALOG_JDBC_USER: ${POSTGRES_USER:-postgres}
+      CATALOG_JDBC_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       CATALOG_WAREHOUSE: s3://primodel-lake/warehouse
       CATALOG_IO__IMPL: org.apache.iceberg.aws.s3.S3FileIO
       CATALOG_S3_ENDPOINT: http://object-store:9000
