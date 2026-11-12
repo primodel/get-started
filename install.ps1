@@ -139,9 +139,6 @@ Say 'Downloading compose files'
 Fetch 'docker-compose.yml' 'docker-compose.yml'
 Fetch 'Caddyfile' 'Caddyfile'
 Fetch 'primodel.toml' 'primodel.toml'
-# Carries .\data\* from an older install into the named volumes this release uses — see the script
-# header. Run automatically below; safe to re-run and a no-op on a fresh install.
-Fetch 'migrate-data-to-volumes.ps1' 'migrate-data-to-volumes.ps1'
 
 # The KEK lives in a SoftHSM token whose image is BUILT from this directory by the compose file -
 # without these two files `docker compose up` fails on a missing build context before anything starts.
@@ -211,13 +208,6 @@ if ($freshEnv -and (Test-Path 'data/postgres') -and (Get-ChildItem 'data/postgre
   Write-Host "           docker compose down -v     # then re-run" -ForegroundColor Yellow
   Write-Host "         or restore the .env that created it (matching POSTGRES_PASSWORD). Not touching your data." -ForegroundColor Yellow
 }
-
-# Carry any pre-existing .\data state into the named volumes this release uses (idempotent — a
-# no-op on a fresh install, and never overwrites a volume that already has data). Fatal on failure:
-# continuing past a failed copy risks starting on an empty volume while the old data sits untouched
-# in .\data, which is exactly the silent-data-loss this guards against.
-& ./migrate-data-to-volumes.ps1
-if ($LASTEXITCODE -ne 0) { Die 'Data migration failed (see above) — not starting the stack.' }
 
 # The compose file pins `pull_policy: always` so a stale cache can never serve an old build. That is
 # right for the published image and wrong for one you built or side-loaded yourself: compose would try

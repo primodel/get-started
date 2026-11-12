@@ -70,7 +70,7 @@ docker compose down               # stop (keeps data — state lives in named vo
 docker compose down -v            # stop and DELETE all data (fresh start)
 ```
 
-### Reset / migrate from an older install
+### Reset
 
 - **Full reset:** `docker compose down -v` removes every named volume this stack declares (postgres,
   nats, softhsm, plugin-packages, and — with the lake overlay — object-store and clickhouse).
@@ -82,17 +82,6 @@ docker compose down -v            # stop and DELETE all data (fresh start)
   ```
   (`primodel` is the default project name, set by `name:` at the top of `docker-compose.yml`; a
   different one if you passed `-p` or set `COMPOSE_PROJECT_NAME`.)
-- **Upgrading from a release that used `./data` bind mounts:** `install.sh`/`install.ps1` run
-  `migrate-data-to-volumes.sh`/`.ps1` automatically — it copies any pre-existing `./data/<service>`
-  into the matching named volume (ownership and permissions preserved) and never touches a volume
-  that already has data. Set up `compose/` by hand instead of via the installer? Run it yourself
-  once, from this directory, before `docker compose up -d`:
-  ```bash
-  ./migrate-data-to-volumes.sh      # macOS/Linux
-  .\migrate-data-to-volumes.ps1     # Windows PowerShell
-  ```
-  Your old `./data` directory is left in place — remove it yourself once you've confirmed the stack
-  starts cleanly with your data.
 
 ## Configuration
 
@@ -124,9 +113,7 @@ an env var:
   token itself, the first time it logs in — the sidecar only creates the *token*, not the key.
   Production deployments leave this unset/false and provision the KEK out-of-band.
 - Removing the `softhsm-tokens` volume (part of the full-reset `docker compose down -v`) removes the
-  token and the KEK with it. Stored secrets are only decryptable while that volume exists — that's
-  why the migration script (see "Reset / migrate from an older install" above) carries it over on
-  upgrade rather than leaving it behind in `./data`.
+  token and the KEK with it. Stored secrets are only decryptable while that volume exists.
 
 See `compose/softhsm/entrypoint.sh` for the full rationale, and the app's `Primodel.Providers.Kek`
 namespace for the other supported backends (`local:`, `awskms:`, `azurekv:`, `gcpkms:`).

@@ -218,10 +218,6 @@ services:
 # real name with `docker compose config --volumes` (names) or `docker volume ls --filter
 # label=com.docker.compose.project=<project>` (names + the project prefix) rather than hard-coding it.
 #
-# Upgrading an install that still has data under ./data? Run `./migrate-data-to-volumes.sh` (or
-# `.ps1` on Windows) once — install.sh/install.ps1 already do this for you. It copies ./data/* into
-# these volumes and never touches a volume that already has data. See the README.
-#
 # Read-only config (postgres-init, Caddyfile, graphiql, primodel.toml, …) is unaffected — it was
 # never under ./data. Caddy's own ./data/caddy{,-config} (TLS certs, used only when PRIMODEL_DOMAIN
 # is set) stays a bind mount: small, not a measured bottleneck, out of scope for this change.

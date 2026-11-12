@@ -21,9 +21,6 @@
 # migrate. Just bring the lake overlay up as usual; `postgres-catalog-init` creates the `iceberg_catalog`
 # database on the existing `postgres` service, and Primodel re-registers each silver Iceberg table from
 # scratch the next time it writes to it (the normal "table doesn't exist in the catalog yet" path).
-# If you still have lake data under ./data/object-store or ./data/clickhouse from an older release,
-# `migrate-data-to-volumes.sh`/`.ps1` (run by install.sh/install.ps1, or by hand) carries it into the
-# new volumes.
 #
 # TEARDOWN:
 #   docker compose -f docker-compose.yml -f docker-compose.lake.yml down
