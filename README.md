@@ -91,7 +91,7 @@ Sign in at <http://localhost:8080>.
 
 7. **Diagrams** — Open the HR Model and Finance Model diagrams (as `ada` or `frank`). Both include cross-domain entity references. The Finance diagram shows Invoice → Person (cross-domain reference to HR).
 
-8. **Reset** — To start fresh: `docker compose down && rm -rf data`, then re-run the install script.
+8. **Reset** — To start fresh: `docker compose down -v`, then re-run the install script.
 
 ## Data lake (opt-in)
 
@@ -140,11 +140,12 @@ The `PRIMODEL_DEMO_LAKE=true` flag passed to the Primodel container activates th
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.lake.yml down
-# Optionally remove lake data volumes:
-rm -rf compose/data/object-store compose/data/clickhouse
+# Optionally remove ONLY the lake's named volumes (keeps postgres/nats/softhsm):
+docker volume ls --filter label=com.docker.compose.project=primodel --format '{{.Name}}' \
+  | grep -E 'object-store-data|clickhouse-data' | xargs -r docker volume rm
 ```
 
-Removing the lake data drops all bronze objects and Iceberg data files. The Iceberg catalog's own table metadata lives in the `iceberg_catalog` database, alongside the canonical Postgres data under `compose/data/postgres`, and is unaffected by the above — drop it separately with `docker compose exec postgres psql -U postgres -c 'DROP DATABASE iceberg_catalog'` for a fully clean catalog.
+Removing the lake volumes drops all bronze objects and Iceberg data files. The Iceberg catalog's own table metadata lives in the `iceberg_catalog` database, in the same `postgres-data` volume as the canonical store, and is unaffected by the above — drop it separately with `docker compose exec postgres psql -U postgres -c 'DROP DATABASE iceberg_catalog'` for a fully clean catalog.
 
 **Upgrading an existing install:** earlier releases backed the Iceberg catalog with SQLite in the `iceberg-rest` container's own `/tmp`, which was already lost on every container recreate — so there is no catalog state to carry over. Just start the lake overlay as usual; a one-shot init step creates the `iceberg_catalog` database on your existing `postgres` service, and Primodel re-registers each silver Iceberg table the next time it writes to it.
 

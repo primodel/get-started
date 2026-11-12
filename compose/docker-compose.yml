@@ -24,10 +24,11 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-primodel}
     volumes:
       # postgres:18+ stores data in a version subdir; mount the parent, not …/data.
-      # State is bind-mounted under ./data next to this compose file (not a shared named volume), so
-      # each install directory is self-contained: a fresh dir is a fresh DB, parallel installs are
-      # isolated, and deleting the dir removes the data. No cross-folder credential clashes.
-      - ./data/postgres:/var/lib/postgresql
+      # Named volume, not a ./data bind mount: on Docker Desktop (Windows/macOS) a bind mount routes
+      # every fsync through host file sharing — measured ~2x slower than a named volume here. Compose
+      # prefixes the volume with the project name (name: primodel above), so parallel `-p` projects
+      # stay isolated the same way separate ./data directories used to.
+      - postgres-data:/var/lib/postgresql
       # [DEMO ONLY] Init script creates the primodel_demo database on first start.
       # The demo seed connects to this separate DB to provision physical tables and write records;
       # it does NOT create the database itself — Postgres init scripts handle that here.
@@ -43,7 +44,9 @@ services:
     image: nats:2.10
     command: ["-js", "-sd", "/data"]   # JetStream, persisted
     volumes:
-      - ./data/nats:/data
+      # Named volume: JetStream fsyncs on every publish. Measured on Docker Desktop (Windows/macOS):
+      # 2,640 msgs/s on a ./data bind mount vs 255,377 msgs/s on a named volume (async publish).
+      - nats-data:/data
     restart: unless-stopped
 
   # [DEMO ONLY] Static file server: serves demo source files (JSON/XML/CSV) to the seeded pipelines.
@@ -74,10 +77,11 @@ services:
     volumes:
       # Same container-internal paths as the primodel service below (see softhsm/entrypoint.sh) —
       # the softhsm2.conf this container writes is read verbatim by primodel, so its
-      # directories.tokendir must resolve to the same path in both containers.
-      - ./data/softhsm/tokens:/opt/softhsm/tokens
-      - ./data/softhsm/etc:/opt/softhsm/etc
-      - ./data/softhsm/lib:/opt/softhsm/lib
+      # directories.tokendir must resolve to the same path in both containers. Named volumes (not
+      # ./data): these hold the KEK token, and losing it means stored secrets can't be decrypted.
+      - softhsm-tokens:/opt/softhsm/tokens
+      - softhsm-etc:/opt/softhsm/etc
+      - softhsm-lib:/opt/softhsm/lib
     restart: "no"
 
   # One-shot: makes the plugin-packages volume writable by the app's non-root uid. A fresh named volume is
@@ -164,11 +168,11 @@ services:
       - plugin-packages:/var/lib/primodel/packages
       # ── SoftHSM: PKCS#11 module + token, published by softhsm-init onto the same volumes ──
       # /opt/softhsm/lib holds libsofthsm2.so (PRIMODEL_KEK's module= path above); the image has no
-      # softhsm2 package of its own, so it can only load the library from this bind mount.
-      - ./data/softhsm/lib:/opt/softhsm/lib:ro
-      - ./data/softhsm/etc:/opt/softhsm/etc:ro
+      # softhsm2 package of its own, so it can only load the library from this mount.
+      - softhsm-lib:/opt/softhsm/lib:ro
+      - softhsm-etc:/opt/softhsm/etc:ro
       # NOT read-only: the app writes the generated AES KEK object into the token store here.
-      - ./data/softhsm/tokens:/opt/softhsm/tokens
+      - softhsm-tokens:/opt/softhsm/tokens
       # ── primodel.toml operator overlay (layer 3 — see ServiceCollectionExtensions in the app for
       # the full base-image < /etc/primodel < /mnt/primodel < env < DB precedence chain). Mounted at
       # the default VolumeOverlayPath, so PRIMODEL_CONFIG_PATH is left unset here; set it instead if
@@ -207,10 +211,26 @@ services:
       - "${PRIMODEL_PORT:-8080}:8080"
     restart: unless-stopped
 
-# No named volumes: all persistent state is bind-mounted under ./data next to this file (see each
-# service). That keeps every install directory self-contained and avoids Docker's global, project-
-# scoped named volumes silently persisting old credentials across re-runs and separate folders.
+# Persistent state (postgres, nats, softhsm) lives in the named volumes below rather than a ./data
+# bind mount — see each service's volumes: comment for the measured reason. Compose prefixes every
+# volume with the project name (primodel_postgres-data, etc. by default; a different one if you pass
+# -p), so separate projects stay isolated the way separate ./data directories used to. Resolve the
+# real name with `docker compose config --volumes` (names) or `docker volume ls --filter
+# label=com.docker.compose.project=<project>` (names + the project prefix) rather than hard-coding it.
+#
+# Upgrading an install that still has data under ./data? Run `./migrate-data-to-volumes.sh` (or
+# `.ps1` on Windows) once — install.sh/install.ps1 already do this for you. It copies ./data/* into
+# these volumes and never touches a volume that already has data. See the README.
+#
+# Read-only config (postgres-init, Caddyfile, graphiql, primodel.toml, …) is unaffected — it was
+# never under ./data. Caddy's own ./data/caddy{,-config} (TLS certs, used only when PRIMODEL_DOMAIN
+# is set) stays a bind mount: small, not a measured bottleneck, out of scope for this change.
 
 volumes:
   # Installed driver packages — survives `docker compose up -d` recreating the app container.
   plugin-packages:
+  postgres-data:
+  nats-data:
+  softhsm-tokens:
+  softhsm-etc:
+  softhsm-lib:

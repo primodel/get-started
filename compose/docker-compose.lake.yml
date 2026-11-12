@@ -10,22 +10,30 @@
 #
 # The base `docker compose up -d` (without this file) is completely unchanged — the lake is OFF by default.
 #
-# All lake services share the `lake` Docker network with the primodel container.  Object-store data is
-# bind-mounted under ./data/object-store so it survives compose restarts. The Iceberg catalog's own
-# table metadata lives in the `iceberg_catalog` database on the stack's shared `postgres` service
-# (bind-mounted under ./data/postgres), so it survives restarts and container recreates too.
+# All lake services share the `lake` Docker network with the primodel container. Object-store and
+# ClickHouse state live in named volumes (object-store-data, clickhouse-data — see each service's
+# volumes: comment), so they survive compose restarts. The Iceberg catalog's own table metadata lives
+# in the `iceberg_catalog` database on the stack's shared `postgres` service (its own named volume,
+# postgres-data, defined in docker-compose.yml), so it survives restarts and container recreates too.
 #
 # UPGRADING an existing install to this release: the catalog used to live in SQLite under /tmp inside
 # the iceberg-rest container, which was already lost on every recreate — so there is no catalog state to
 # migrate. Just bring the lake overlay up as usual; `postgres-catalog-init` creates the `iceberg_catalog`
 # database on the existing `postgres` service, and Primodel re-registers each silver Iceberg table from
 # scratch the next time it writes to it (the normal "table doesn't exist in the catalog yet" path).
+# If you still have lake data under ./data/object-store or ./data/clickhouse from an older release,
+# `migrate-data-to-volumes.sh`/`.ps1` (run by install.sh/install.ps1, or by hand) carries it into the
+# new volumes.
 #
 # TEARDOWN:
 #   docker compose -f docker-compose.yml -f docker-compose.lake.yml down
-#   rm -rf ./data/object-store ./data/clickhouse   # drops all lake data
-#   # The iceberg_catalog database lives in ./data/postgres (shared with the canonical store) and is
-#   # NOT removed by the above — drop it manually if you want a completely clean lake catalog:
+#   docker compose -f docker-compose.yml -f docker-compose.lake.yml down -v   # also drops ALL state,
+#                                                                              # including postgres/nats
+#   # To drop ONLY the lake data (keep postgres/nats/softhsm), remove just those two volumes:
+#   #   docker volume ls --filter label=com.docker.compose.project=primodel --format '{{.Name}}' \
+#   #     | grep -E 'object-store-data|clickhouse-data' | xargs -r docker volume rm
+#   # The iceberg_catalog database lives in the postgres-data volume (shared with the canonical store)
+#   # and is NOT removed by the above — drop it manually if you want a completely clean lake catalog:
 #   #   docker compose exec postgres psql -U postgres -c 'DROP DATABASE iceberg_catalog'
 
 name: primodel
@@ -44,7 +52,10 @@ services:
       -volume.max=0 -master.volumeSizeLimitMB=1024
       -s3 -s3.port=9000 -s3.config=/etc/seaweedfs/s3.json
     volumes:
-      - ./data/object-store:/data
+      # Named volume, not a ./data bind mount: on Docker Desktop (Windows/macOS) a bind mount routes
+      # every fsync through host file sharing, which is measurably slower (see the NATS/Postgres note
+      # in docker-compose.yml for the same effect measured there).
+      - object-store-data:/data
       - ./seaweedfs/s3.json:/etc/seaweedfs/s3.json:ro
     ports:
       # Filer web UI (browse buckets and objects). Remap with OBJECT_STORE_CONSOLE_PORT in .env.
@@ -77,10 +88,10 @@ services:
 
   # ── Iceberg catalog DB initialiser (one-shot, idempotent) ──────────────────────────────────────────
   # Creates the iceberg_catalog database on the shared `postgres` service if it doesn't already exist.
-  # postgres-init/*.sql scripts only run on a FRESH data directory (Postgres skips initdb.d once
-  # ./data/postgres already holds a cluster), so an install that already exists and is enabling the
-  # lake overlay for the first time needs this step to create the database. Re-running is harmless:
-  # an existing database is reported and left alone.
+  # postgres-init/*.sql scripts only run on a FRESH data directory (Postgres skips initdb.d once the
+  # postgres-data volume already holds a cluster), so an install that already exists and is enabling
+  # the lake overlay for the first time needs this step to create the database. Re-running is
+  # harmless: an existing database is reported and left alone.
   postgres-catalog-init:
     image: postgres:18
     depends_on:
@@ -166,7 +177,8 @@ services:
       # which would refuse Primodel's query-back connection from the app container.
       CLICKHOUSE_SKIP_USER_SETUP: "1"
     volumes:
-      - ./data/clickhouse:/var/lib/clickhouse
+      # Named volume, not a ./data bind mount — same host file-sharing cost as object-store-data above.
+      - clickhouse-data:/var/lib/clickhouse
       - ./clickhouse-config/named-collections.xml:/etc/clickhouse-server/config.d/named-collections.xml:ro
     ports:
       # Host port is parameterized like the object-store console so a machine already running something on 8123
@@ -208,3 +220,7 @@ services:
       # ClickHouse query-back service.
       Primodel__DemoSeed__Lake__ClickHouseHost: "clickhouse"
       Primodel__DemoSeed__Lake__ClickHousePort: "8123"
+
+volumes:
+  object-store-data:
+  clickhouse-data:

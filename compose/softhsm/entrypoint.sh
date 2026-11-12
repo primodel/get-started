@@ -1,7 +1,7 @@
 #!/bin/sh
 # One-shot SoftHSM init: creates the PKCS#11 token (if not already there) and publishes the
-# libsofthsm2.so module + its config onto bind-mounted volumes the `primodel` container also
-# mounts, so the app's in-process PKCS#11 client (Net.Pkcs11Interop) can dlopen it. This container
+# libsofthsm2.so module + its config onto named volumes the `primodel` container also mounts, so
+# the app's in-process PKCS#11 client (Net.Pkcs11Interop) can dlopen it. This container
 # exits after init — the compose profile gates `primodel` on it via
 # `condition: service_completed_successfully`.
 #
@@ -39,7 +39,7 @@ fi
 export SOFTHSM2_CONF="$CONF_FILE"
 
 # Publish the PKCS#11 module onto the shared volume — the primodel image has no softhsm2 package of
-# its own, so it can only load the library from a bind-mounted path. Vendor the transitive shared-lib
+# its own, so it can only load the library from this mounted path. Vendor the transitive shared-lib
 # deps too (best-effort: only those actually resolvable here) rather than assuming the primodel
 # container's base image already has every one of them.
 MODULE_SRC="$(find /usr/lib -name 'libsofthsm2.so' 2>/dev/null | head -n1)"
@@ -52,9 +52,9 @@ for dep in $(ldd "$MODULE_SRC" 2>/dev/null | awk '{print $3}' | grep '^/'); do
   cp -n "$dep" "$LIB_DIR/" 2>/dev/null || true
 done
 
-# Idempotent token init: a fresh bind-mounted TOKEN_DIR is empty; a re-run against an already
-# provisioned ./data/softhsm/tokens is not. Re-running --init-token would wipe the existing KEK the
-# app generated on a previous boot, so skip entirely rather than trying to detect the label.
+# Idempotent token init: a fresh TOKEN_DIR volume is empty; a re-run against an already provisioned
+# one is not. Re-running --init-token would wipe the existing KEK the app generated on a previous
+# boot, so skip entirely rather than trying to detect the label.
 if [ -z "$(ls -A "$TOKEN_DIR" 2>/dev/null)" ]; then
   echo "softhsm-init: initializing token '$TOKEN_LABEL'..."
   softhsm2-util --init-token --free --label "$TOKEN_LABEL" --so-pin "$SO_PIN" --pin "$USER_PIN"

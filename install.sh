@@ -123,6 +123,10 @@ say "Downloading compose files"
 curl -fsSL "$REPO_RAW/docker-compose.yml" -o docker-compose.yml
 curl -fsSL "$REPO_RAW/Caddyfile"          -o Caddyfile
 curl -fsSL "$REPO_RAW/primodel.toml"      -o primodel.toml
+# Carries ./data/* from an older install into the named volumes this release uses — see the script
+# header. Run automatically below; safe to re-run and a no-op on a fresh install.
+curl -fsSL "$REPO_RAW/migrate-data-to-volumes.sh" -o migrate-data-to-volumes.sh
+chmod +x migrate-data-to-volumes.sh
 
 # The KEK lives in a SoftHSM token, and its image is BUILT from this directory by the compose file —
 # without these two files `docker compose up` fails on a missing build context before anything starts.
@@ -191,9 +195,15 @@ fi
 if [ "$FRESH_ENV" = 1 ] && [ -d data/postgres ] && [ -n "$(ls -A data/postgres 2>/dev/null || true)" ]; then
   printf '\033[1;33mWarning:\033[0m Existing database data in ./%s/data/postgres, but fresh secrets were just generated.\n' "$TARGET_DIR" >&2
   printf '         Postgres will reject the new password (28P01). Either start fresh (DELETES that data):\n' >&2
-  printf '           rm -rf ./data     # then re-run\n' >&2
+  printf '           docker compose down -v     # then re-run\n' >&2
   printf '         or restore the .env that created it (matching POSTGRES_PASSWORD). Not touching your data.\n' >&2
 fi
+
+# Carry any pre-existing ./data state into the named volumes this release uses (idempotent — a
+# no-op on a fresh install, and never overwrites a volume that already has data). Fatal on failure:
+# continuing past a failed copy risks starting on an empty volume while the old data sits untouched
+# in ./data, which is exactly the silent-data-loss this guards against.
+./migrate-data-to-volumes.sh || die "Data migration failed (see above) — not starting the stack."
 
 # The compose file pins `pull_policy: always` so a stale cache can never serve an old build. That is
 # right for the published image and wrong for one you built or side-loaded yourself: compose would try
@@ -369,7 +379,7 @@ $(say "Primodel is ready with the demo dataset! [DEMO ONLY — INSECURE]")
 
   Logs:     (cd ${TARGET_DIR} && docker compose ${COMPOSE_FILES[*]} logs -f primodel)
   Stop:     (cd ${TARGET_DIR} && docker compose ${COMPOSE_FILES[*]} down)
-  Reset:    (cd ${TARGET_DIR} && docker compose ${COMPOSE_FILES[*]} down && rm -rf data)
+  Reset:    (cd ${TARGET_DIR} && docker compose ${COMPOSE_FILES[*]} down -v)
 ${LAKE_HELP}
 Credentials are stored in ./${TARGET_DIR}/.env.
 
