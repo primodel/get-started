@@ -205,7 +205,7 @@ POSTGRES_DB=primodel
 if ($freshEnv -and (Test-Path 'data/postgres') -and (Get-ChildItem 'data/postgres' -Force -ErrorAction SilentlyContinue)) {
   Write-Host "Warning: Existing database data in .\$TargetDir\data\postgres, but fresh secrets were just generated." -ForegroundColor Yellow
   Write-Host "         Postgres will reject the new password (28P01). Start fresh (DELETES that data):" -ForegroundColor Yellow
-  Write-Host "           Remove-Item -Recurse -Force .\data     # then re-run" -ForegroundColor Yellow
+  Write-Host "           docker compose down -v     # then re-run" -ForegroundColor Yellow
   Write-Host "         or restore the .env that created it (matching POSTGRES_PASSWORD). Not touching your data." -ForegroundColor Yellow
 }
 
@@ -376,7 +376,7 @@ Write-Host "    Invoke-RestMethod http://localhost:$port/api/data/Demo/HR/Person
 Write-Host ''
 Write-Host "  Logs:     cd $TargetDir; docker compose $ComposeArgs logs -f primodel"
 Write-Host "  Stop:     cd $TargetDir; docker compose $ComposeArgs down"
-Write-Host "  Reset:    cd $TargetDir; docker compose $ComposeArgs down; Remove-Item -Recurse -Force data"
+Write-Host "  Reset:    cd $TargetDir; docker compose $ComposeArgs down -v"
 if ($mode -eq 'lake') {
   Write-Host ''
   Write-Host '  Lake services:'

@@ -191,7 +191,7 @@ fi
 if [ "$FRESH_ENV" = 1 ] && [ -d data/postgres ] && [ -n "$(ls -A data/postgres 2>/dev/null || true)" ]; then
   printf '\033[1;33mWarning:\033[0m Existing database data in ./%s/data/postgres, but fresh secrets were just generated.\n' "$TARGET_DIR" >&2
   printf '         Postgres will reject the new password (28P01). Either start fresh (DELETES that data):\n' >&2
-  printf '           rm -rf ./data     # then re-run\n' >&2
+  printf '           docker compose down -v     # then re-run\n' >&2
   printf '         or restore the .env that created it (matching POSTGRES_PASSWORD). Not touching your data.\n' >&2
 fi
 
@@ -369,7 +369,7 @@ $(say "Primodel is ready with the demo dataset! [DEMO ONLY — INSECURE]")
 
   Logs:     (cd ${TARGET_DIR} && docker compose ${COMPOSE_FILES[*]} logs -f primodel)
   Stop:     (cd ${TARGET_DIR} && docker compose ${COMPOSE_FILES[*]} down)
-  Reset:    (cd ${TARGET_DIR} && docker compose ${COMPOSE_FILES[*]} down && rm -rf data)
+  Reset:    (cd ${TARGET_DIR} && docker compose ${COMPOSE_FILES[*]} down -v)
 ${LAKE_HELP}
 Credentials are stored in ./${TARGET_DIR}/.env.
 

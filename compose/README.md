@@ -16,9 +16,12 @@ Runs Primodel and its required backing services on your machine with one command
 | `softhsm-init` | built from `softhsm/` | One-shot: initializes the SoftHSM PKCS#11 token used as the KEK backend, then exits |
 
 The object store defaults to the **local filesystem**, so no S3 object store is needed to get started. All
-persistent state is **bind-mounted under `./data`** next to the compose file — no Docker named volumes.
-That keeps each install directory self-contained: a fresh directory is a fresh install, and deleting
-`./data` removes all data.
+persistent state (postgres, nats, softhsm) lives in **Docker named volumes**, prefixed with the project
+name (`primodel_postgres-data` by default) so parallel installs started with `-p` stay isolated. Named
+volumes, not a `./data` bind mount, because on Docker Desktop (Windows/macOS) a bind mount routes every
+fsync through host file sharing — measured 2,640 msgs/s on NATS JetStream with a bind mount vs 255,377
+msgs/s on a named volume, and Postgres about 2x slower. Read-only config (`postgres-init/`, `Caddyfile`,
+`primodel.toml`, `graphiql/`) still lives next to the compose file, same as before.
 
 ## Run it
 
@@ -63,9 +66,22 @@ See the [root README](../README.md) for the full demo tour.
 ```bash
 docker compose logs -f primodel   # follow logs
 docker compose pull && docker compose up -d   # upgrade to the latest image
-docker compose down               # stop (keeps data — state lives in ./data)
-docker compose down && rm -rf data   # stop and DELETE all data (fresh start)
+docker compose down               # stop (keeps data — state lives in named volumes)
+docker compose down -v            # stop and DELETE all data (fresh start)
 ```
+
+### Reset
+
+- **Full reset:** `docker compose down -v` removes every named volume this stack declares (postgres,
+  nats, softhsm, plugin-packages, and — with the lake overlay — object-store and clickhouse).
+- **One volume only:** find its real name, then remove it —
+  ```bash
+  docker compose config --volumes                        # short names declared in the compose files
+  docker volume ls --filter label=com.docker.compose.project=primodel --format '{{.Name}}'
+  docker volume rm primodel_postgres-data                 # example — use the real name above
+  ```
+  (`primodel` is the default project name, set by `name:` at the top of `docker-compose.yml`; a
+  different one if you passed `-p` or set `COMPOSE_PROJECT_NAME`.)
 
 ## Configuration
 
@@ -87,17 +103,17 @@ an env var:
 
 - `softhsm-init` runs once at startup: it initializes the SoftHSM token (well under a second — it's
   local state creation, not network I/O) and publishes the PKCS#11 module (`libsofthsm2.so`) + its
-  config onto `./data/softhsm/{tokens,etc,lib}`, which `primodel` also mounts. It then exits, and
-  `primodel` waits on that exit (`service_completed_successfully`) before starting — the app's first
-  boot never races an uninitialized token.
+  config onto the `softhsm-tokens`/`softhsm-etc`/`softhsm-lib` named volumes, which `primodel` also
+  mounts. It then exits, and `primodel` waits on that exit (`service_completed_successfully`) before
+  starting — the app's first boot never races an uninitialized token.
 - `PRIMODEL_KEK` is the **non-secret pointer**: `pkcs11:module=<path>;token=<label>;label=<keylabel>`
   — no key material, ever. `PRIMODEL_KEK_PKCS11_PIN` authenticates to the SoftHSM token (not the KEK
   itself); it must match `SOFTHSM_PIN` in `.env`.
 - `PRIMODEL_KEK_PKCS11_CREATE_IF_MISSING=true` lets the app generate the AES-256 KEK object on the
   token itself, the first time it logs in — the sidecar only creates the *token*, not the key.
   Production deployments leave this unset/false and provision the KEK out-of-band.
-- Deleting `./data/softhsm` (part of the full-reset `rm -rf ./data`) removes the token and the KEK
-  with it — same lifecycle as the rest of `./data`.
+- Removing the `softhsm-tokens` volume (part of the full-reset `docker compose down -v`) removes the
+  token and the KEK with it. Stored secrets are only decryptable while that volume exists.
 
 See `compose/softhsm/entrypoint.sh` for the full rationale, and the app's `Primodel.Providers.Kek`
 namespace for the other supported backends (`local:`, `awskms:`, `azurekv:`, `gcpkms:`).
