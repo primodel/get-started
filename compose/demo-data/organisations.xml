@@ -472,7 +472,7 @@
   </organisation>
   <organisation>
     <id>00000446-0000-0000-0000-000000000000</id>
-    <name>Integration Services</name>
+    <name>Pipeline Services</name>
     <parent_org_id>00000421-0000-0000-0000-000000000000</parent_org_id>
   </organisation>
   <organisation>
